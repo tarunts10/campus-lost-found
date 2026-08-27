@@ -24,27 +24,52 @@ import Item, {
 } from '../models/Item.js';
 
 /**
- * ======================= TEMPORARY — REMOVE WITH AUTH =======================
+ * Which user fields are safe to expose when populating reportedBy.
  *
- * Every item must record who reported it, but authentication does not exist
- * yet, so there is no real user. This is a fixed, fake ObjectId used for all
- * development data.
+ * Mongoose replaces the stored ObjectId with the referenced User document.
+ * Listing the fields explicitly means only these are fetched from MongoDB
+ * in the first place — the password hash is never even loaded, let alone
+ * serialised. (The User schema also marks password as select: false, so
+ * this is the second of two independent protections.)
  *
- * When the auth milestone lands, the change is:
- *   1. Delete this constant.
- *   2. Replace `DEV_PLACEHOLDER_USER_ID` below with `req.user._id`,
- *      populated by authentication middleware.
- *
- * No schema change and no data migration are needed, because the FIELD is
- * already correct — only the VALUE is fake.
- *
- * Note this ObjectId points at no real User document. That is harmless
- * until we call .populate(), which we do not do yet.
- * ===========================================================================
+ * Email is deliberately omitted. Contact details stay hidden until a claim
+ * reaches the verification step, which is a Claims-milestone concern.
  */
-const DEV_PLACEHOLDER_USER_ID = new mongoose.Types.ObjectId(
-  '000000000000000000000001'
-);
+const PUBLIC_USER_FIELDS = 'name role';
+
+/**
+ * Ownership check: may this user modify this item?
+ *
+ * Two ways to qualify — you reported it, or you are an ADMIN.
+ *
+ * SECURITY: req.user comes from authMiddleware, which loaded it from the
+ * database using a verified token. It is NOT read from the request body,
+ * so a client cannot claim to be someone else or claim to be an admin.
+ *
+ * The .toString() calls matter: item.reportedBy is an ObjectId and
+ * req.user._id is an ObjectId, and comparing two ObjectId OBJECTS with
+ * === compares references, not values. Two ObjectIds holding the same id
+ * are not === each other. Comparing their string forms is correct.
+ */
+const canModifyItem = (item, user) =>
+  item.reportedBy.toString() === user._id.toString() || user.role === 'ADMIN';
+
+/**
+ * Fields a client is allowed to change on an existing item.
+ *
+ * Deliberately excludes:
+ *   reportedBy — ownership is not transferable by request
+ *   status     — driven by the Claims workflow, not by direct edits
+ *   _id, createdAt, updatedAt — managed by MongoDB and Mongoose
+ */
+const UPDATABLE_ITEM_FIELDS = [
+  'title',
+  'description',
+  'category',
+  'type',
+  'location',
+  'date',
+];
 
 /**
  * The only query parameters GET /api/items accepts.
@@ -54,7 +79,28 @@ const DEV_PLACEHOLDER_USER_ID = new mongoose.Types.ObjectId(
  * "return everything", and the caller cannot tell that from a genuine
  * empty-filter request. A typo becomes a silent wrong answer.
  */
-const ALLOWED_QUERY_PARAMS = ['type', 'status', 'category', 'page', 'limit'];
+const ALLOWED_QUERY_PARAMS = [
+  'type',
+  'status',
+  'category',
+  'search',
+  'page',
+  'limit',
+];
+
+/**
+ * Escape every character that has special meaning in a regular expression.
+ *
+ * SECURITY: a search term goes straight into a RegExp, and user input in
+ * a regex is dangerous in two ways. A term like "a(" is invalid syntax
+ * and would throw a 500. Worse, a crafted pattern such as "(a+)+$" can
+ * cause catastrophic backtracking — a ReDoS attack that pins the CPU and,
+ * because Node is single threaded, freezes the entire server for everyone.
+ *
+ * Escaping turns every character into a literal, so the term can only
+ * ever mean "match this exact text".
+ */
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Pagination defaults and bounds.
@@ -155,27 +201,10 @@ const parseEnumFilter = (value, allowed, fieldName) => {
  */
 export const createItem = async (req, res) => {
   /**
-   * Guard: make sure a JSON body was actually parsed.
+   * No body guard needed here any more: validate(createItemSchema) runs
+   * before this controller and has already rejected a missing, malformed
+   * or invalid body with a 400.
    *
-   * express.json() only parses bodies whose Content-Type is
-   * application/json. If the header is missing, it skips silently and
-   * req.body stays undefined — and destructuring undefined throws a
-   * TypeError, which would surface as a 500.
-   *
-   * That would be wrong: forgetting the header is the CLIENT's mistake,
-   * so it must be a 4xx. Naming Content-Type in the message turns a
-   * confusing "server error" into an obvious fix.
-   */
-  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
-    const error = new Error(
-      'Request body must be a JSON object. Did you set the ' +
-        'Content-Type: application/json header?'
-    );
-    error.statusCode = 400;
-    throw error;
-  }
-
-  /**
    * SECURITY — explicit field picking, NOT `Item.create(req.body)`.
    *
    * Passing req.body straight through is a mass-assignment vulnerability.
@@ -196,10 +225,18 @@ export const createItem = async (req, res) => {
     location,
     date,
 
-    // NOT taken from the client:
-    // status   — defaults to ACTIVE in the schema
-    // reportedBy — injected by the server (see TEMPORARY note above)
-    reportedBy: DEV_PLACEHOLDER_USER_ID,
+    /**
+     * NOT taken from the client:
+     *   status     — defaults to ACTIVE in the schema
+     *   reportedBy — taken from the VERIFIED identity, never the body
+     *
+     * req.user was loaded by authMiddleware from a cryptographically
+     * verified JWT. It is the only trustworthy statement of who is making
+     * this request. If a client sends {"reportedBy": "<someone else>"},
+     * that value is simply never read — the line below overwrites nothing
+     * because the forged field was never destructured above.
+     */
+    reportedBy: req.user._id,
   });
 
   /**
@@ -276,6 +313,50 @@ export const getItems = async (req, res) => {
   }
 
   /**
+   * TEXT SEARCH — ?search=wallet
+   *
+   * Matches the term anywhere in the title OR the description,
+   * case-insensitively. $or means "either condition satisfies the match".
+   *
+   * WHY REGEX RATHER THAN A MONGODB TEXT INDEX:
+   *   - A text index matches whole WORDS after stemming, so "wall" would
+   *     not find "wallet" — which is not what someone typing into a
+   *     search box expects.
+   *   - Regex does substring matching, which is the intuitive behaviour.
+   *
+   * THE COST, stated honestly: an unanchored regex cannot use an index,
+   * so this scans every matching document. That is fine for a campus
+   * collection of a few thousand items and would need a proper text index
+   * (or Atlas Search) at a much larger scale. The right time to change it
+   * is when a measurement says so, not before.
+   */
+  if (req.query.search !== undefined) {
+    if (typeof req.query.search !== 'string') {
+      const error = new Error('Invalid search. Expected a single text value.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const term = req.query.search.trim();
+
+    if (term.length === 0) {
+      const error = new Error('Search term cannot be empty');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (term.length > 100) {
+      const error = new Error('Search term cannot exceed 100 characters');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const pattern = new RegExp(escapeRegex(term), 'i');
+
+    filter.$or = [{ title: pattern }, { description: pattern }];
+  }
+
+  /**
    * PAGINATION
    *
    * Why it exists: `Item.find(filter)` with no limit returns EVERY matching
@@ -313,7 +394,11 @@ export const getItems = async (req, res) => {
    * flight, the thread is free to issue the other.
    */
   const [items, total] = await Promise.all([
-    Item.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    Item.find(filter)
+      .populate('reportedBy', PUBLIC_USER_FIELDS)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
     Item.countDocuments(filter),
   ]);
 
@@ -362,7 +447,10 @@ export const getItemById = async (req, res) => {
     throw error;
   }
 
-  const item = await Item.findById(id);
+  const item = await Item.findById(id).populate(
+    'reportedBy',
+    PUBLIC_USER_FIELDS
+  );
 
   /**
    * findById returns null when nothing matches — it does not throw.
@@ -380,5 +468,130 @@ export const getItemById = async (req, res) => {
   res.status(200).json({
     success: true,
     data: item,
+  });
+};
+
+/**
+ * Helper shared by update and delete: validate the id, load the item,
+ * and confirm this user is allowed to modify it.
+ *
+ * Returns the item, or throws the appropriate error.
+ */
+const loadItemForModification = async (id, user) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    const error = new Error(`'${id}' is not a valid item ID`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const item = await Item.findById(id);
+
+  if (!item) {
+    const error = new Error('Item not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  /**
+   * AUTHORISATION — the check that makes this endpoint safe.
+   *
+   * 403 Forbidden, not 401 Unauthorised. The distinction is real:
+   *   401 = "I do not know who you are"      (no or bad token)
+   *   403 = "I know exactly who you are, and you may not do this"
+   *
+   * The user IS authenticated here — authMiddleware already proved that.
+   * They simply do not own this item.
+   */
+  if (!canModifyItem(item, user)) {
+    const error = new Error('You do not have permission to modify this item');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return item;
+};
+
+/**
+ * PATCH /api/items/:id
+ * Update an item. Owner or ADMIN only.
+ *
+ * PATCH rather than PUT: PATCH means "apply these partial changes",
+ * which matches sending only the fields you want to alter. PUT means
+ * "replace the entire resource", which would require sending every field
+ * every time and would blank out anything omitted.
+ */
+export const updateItem = async (req, res) => {
+  /**
+   * validate(updateItemSchema) has already run: the body is a valid
+   * object containing at least one updatable field, and Zod has STRIPPED
+   * every key not in the schema — so reportedBy and status are literally
+   * absent from req.body by the time this runs.
+   */
+  const item = await loadItemForModification(req.params.id, req.user);
+
+  /**
+   * SECURITY — apply only whitelisted fields.
+   *
+   * Same mass-assignment defence as createItem. Without this loop, a
+   * request containing {"reportedBy": "<attacker id>"} would transfer
+   * ownership of the item, and {"status": "RESOLVED"} would bypass the
+   * claims workflow entirely.
+   *
+   * Anything not in UPDATABLE_ITEM_FIELDS is silently ignored.
+   */
+  const applied = [];
+
+  for (const field of UPDATABLE_ITEM_FIELDS) {
+    if (req.body[field] !== undefined) {
+      item[field] = req.body[field];
+      applied.push(field);
+    }
+  }
+
+  if (applied.length === 0) {
+    const error = new Error(
+      `No updatable fields supplied. Allowed: ${UPDATABLE_ITEM_FIELDS.join(', ')}`
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  /**
+   * .save() rather than findByIdAndUpdate().
+   *
+   * save() runs the full Mongoose validation pipeline — casting, enums,
+   * the custom future-date validator — exactly as it does on create.
+   * findByIdAndUpdate skips most validators unless explicitly told to
+   * with runValidators: true, which is a very easy thing to forget.
+   */
+  await item.save();
+  await item.populate('reportedBy', PUBLIC_USER_FIELDS);
+
+  res.status(200).json({
+    success: true,
+    data: item,
+  });
+};
+
+/**
+ * DELETE /api/items/:id
+ * Delete an item. Owner or ADMIN only.
+ */
+export const deleteItem = async (req, res) => {
+  const item = await loadItemForModification(req.params.id, req.user);
+
+  await item.deleteOne();
+
+  /**
+   * 200 with a confirmation body rather than 204 No Content.
+   *
+   * 204 is also correct and common, but it forbids a response body,
+   * which would make this the only endpoint in the API that does not
+   * return the { success, data } envelope. Consistency for the frontend
+   * is worth more here than protocol purity.
+   */
+  res.status(200).json({
+    success: true,
+    data: { _id: item._id, message: 'Item deleted' },
   });
 };

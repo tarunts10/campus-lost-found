@@ -74,6 +74,37 @@ export const errorHandler = (err, req, res, next) => {
   }
 
   /**
+   * MongoDB duplicate key error (code 11000).
+   *
+   * Thrown when a write violates a unique index — for us, registering an
+   * email that already exists. The register controller checks for this
+   * first and returns a friendly 409, but that check has a race window:
+   * two simultaneous requests can both pass it and both try to insert.
+   *
+   * The unique index is what actually guarantees uniqueness, and this is
+   * where losing that race surfaces. 409 Conflict is the correct code.
+   */
+  if (err.code === 11000) {
+    statusCode = 409;
+
+    /**
+     * err.keyValue names the field(s) that collided. The wording has to
+     * depend on WHICH index was violated — a single generic sentence
+     * produced nonsense like "An account with this item already exists"
+     * when the duplicate was a claim, not a user.
+     */
+    const keys = Object.keys(err.keyValue || {});
+
+    if (keys.includes('email')) {
+      message = 'An account with this email already exists';
+    } else if (keys.includes('item') && keys.includes('claimant')) {
+      message = 'You already have an active claim on this item';
+    } else {
+      message = `A record with this ${keys.join(' + ') || 'value'} already exists`;
+    }
+  }
+
+  /**
    * SECURITY: never leak internal details on a 500.
    *
    * A raw 500 message can contain file paths, database internals, or even
@@ -84,16 +115,19 @@ export const errorHandler = (err, req, res, next) => {
     message = 'Something went wrong';
   }
 
-  const response = {
+  /**
+   * ONE response shape for every error in the API, with no exceptions:
+   *
+   *     { "success": false, "message": "..." }
+   *
+   * Stack traces are deliberately NOT included, not even in development.
+   * The full error is already logged to the server console above, which
+   * is where a developer should read it. Keeping it out of the response
+   * means the shape is identical in every environment — so a leak can
+   * never happen because NODE_ENV was set wrong on a deploy.
+   */
+  res.status(statusCode).json({
     success: false,
     message,
-  };
-
-  // In development only, include the stack trace to make debugging bearable.
-  // NODE_ENV is "production" on Render, so this never reaches real users.
-  if (process.env.NODE_ENV === 'development') {
-    response.stack = err.stack;
-  }
-
-  res.status(statusCode).json(response);
+  });
 };

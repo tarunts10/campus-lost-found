@@ -13,6 +13,29 @@ import connectDB from './config/db.js';
 const PORT = process.env.PORT || 5000;
 
 /**
+ * Environment variables the application cannot run without.
+ *
+ * Checking these at STARTUP rather than on first use is the difference
+ * between "the server refuses to start and tells you why" and "logins
+ * mysteriously return 500 at 2am". A missing JWT_SECRET would otherwise
+ * stay invisible until the first person tried to log in.
+ *
+ * Fail loudly, fail immediately, fail with the fix in the message.
+ */
+const REQUIRED_ENV_VARS = ['MONGODB_URI', 'JWT_SECRET'];
+
+const assertRequiredEnv = () => {
+  const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required environment variable(s): ${missing.join(', ')}. ` +
+        'Copy backend/.env.example to backend/.env and fill in the values.'
+    );
+  }
+};
+
+/**
  * Start the application.
  *
  * ORDER MATTERS: connect to MongoDB BEFORE listening for HTTP traffic.
@@ -24,6 +47,7 @@ const PORT = process.env.PORT || 5000;
  */
 const startServer = async () => {
   try {
+    assertRequiredEnv();
     await connectDB();
 
     app.listen(PORT, () => {
