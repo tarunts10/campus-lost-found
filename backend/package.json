@@ -1,0 +1,24 @@
+{
+  "name": "campus-lost-found-backend",
+  "version": "1.0.0",
+  "description": "REST API for Campus Lost & Found — a private lost-and-found platform for college members.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "express",
+    "api",
+    "lost-and-found"
+  ],
+  "author": "tarun-14032007",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
