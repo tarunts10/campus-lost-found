@@ -1,0 +1,4 @@
+This file exists only so Git will track this otherwise-empty folder.
+Git tracks files, not directories — an empty folder is invisible to it.
+
+Delete this file once the Express app is scaffolded here (Milestone 2).
