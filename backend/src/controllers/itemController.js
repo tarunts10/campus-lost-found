@@ -84,6 +84,7 @@ const ALLOWED_QUERY_PARAMS = [
   'status',
   'category',
   'search',
+  'mine',
   'page',
   'limit',
 ];
@@ -310,6 +311,30 @@ export const getItems = async (req, res) => {
       ITEM_CATEGORIES,
       'category'
     );
+  }
+
+  /**
+   * ?mine=true — restrict the list to items the caller reported.
+   *
+   * Added for the frontend's "My Items" page. Filtering client-side
+   * would be wrong rather than merely slow: with pagination, page 1 of
+   * everyone's items can easily contain none of yours, so the page would
+   * look empty while your items exist on page 3.
+   *
+   * SECURITY: the value is only ever a boolean switch. The user id comes
+   * from req.user (the verified JWT), never from the query string — so
+   * there is no way to ask for somebody else's items.
+   */
+  if (req.query.mine !== undefined) {
+    if (req.query.mine !== 'true' && req.query.mine !== 'false') {
+      const error = new Error("Invalid mine filter. Use 'true' or 'false'.");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (req.query.mine === 'true') {
+      filter.reportedBy = req.user._id;
+    }
   }
 
   /**

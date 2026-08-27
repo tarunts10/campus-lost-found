@@ -1,0 +1,325 @@
+/**
+ * base.css — reset, typography, layout primitives, and the motion system.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  color: var(--text);
+}
+
+h1 { font-size: clamp(2rem, 5vw, var(--text-5xl)); }
+h2 { font-size: clamp(1.5rem, 3.5vw, var(--text-3xl)); }
+h3 { font-size: var(--text-xl); }
+
+a {
+  color: var(--brand-600);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+a:hover { color: var(--brand-700); }
+
+/**
+ * FOCUS VISIBILITY — accessibility, non-negotiable.
+ *
+ * :focus-visible shows the ring for keyboard users but not on mouse
+ * clicks, so keyboard navigation stays obvious without the ring
+ * appearing every time someone clicks a button.
+ */
+:focus-visible {
+  outline: 3px solid var(--brand-400);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Skip link: the first thing a keyboard user reaches. */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: var(--space-4);
+  z-index: 200;
+  padding: var(--space-3) var(--space-4);
+  background: var(--brand-600);
+  color: var(--text-inverse);
+  border-radius: var(--radius);
+  font-weight: 600;
+  transition: top var(--duration) var(--ease-out);
+}
+
+.skip-link:focus {
+  top: var(--space-4);
+  color: var(--text-inverse);
+}
+
+/* ------------------------------------------------------------------
+   LAYOUT
+   ------------------------------------------------------------------ */
+
+.container {
+  width: 100%;
+  max-width: var(--container);
+  margin-inline: auto;
+  padding-inline: var(--space-5);
+}
+
+.page {
+  min-height: calc(100vh - var(--navbar-height));
+  padding-block: var(--space-7) var(--space-8);
+}
+
+.page-header {
+  margin-bottom: var(--space-6);
+}
+
+.page-header p {
+  color: var(--text-muted);
+  margin-top: var(--space-2);
+  max-width: 60ch;
+}
+
+.stack { display: grid; gap: var(--space-4); }
+.stack-lg { display: grid; gap: var(--space-6); }
+
+.row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-5);
+}
+
+/* ------------------------------------------------------------------
+   MOTION SYSTEM — effect 6: entrance reveals
+   Driven by useReveal(), which toggles .is-visible via
+   IntersectionObserver. Staggering is done with --reveal-delay.
+   ------------------------------------------------------------------ */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity var(--duration-slow) var(--ease-out),
+    transform var(--duration-slow) var(--ease-out);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* If motion is reduced, content must still be visible — never leave it
+   stuck at opacity 0 just because the transition was disabled. */
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------------------
+   EFFECT 3: CURSOR
+   Desktop only. `pointer: fine` matches a mouse or trackpad; touch
+   devices report `coarse` and are excluded entirely, so nothing here
+   can interfere with tapping.
+   ------------------------------------------------------------------ */
+
+@media (pointer: fine) {
+  body.has-custom-cursor,
+  body.has-custom-cursor a,
+  body.has-custom-cursor button {
+    cursor: none;
+  }
+}
+
+.cursor-dot,
+.cursor-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 9999;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+.cursor-dot {
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  background: var(--brand-600);
+}
+
+.cursor-ring {
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border: 1.5px solid var(--brand-400);
+  transition:
+    width var(--duration) var(--ease-spring),
+    height var(--duration) var(--ease-spring),
+    margin var(--duration) var(--ease-spring),
+    background-color var(--duration) var(--ease-out),
+    border-color var(--duration) var(--ease-out);
+}
+
+/* Grows and fills when hovering something interactive — the cursor
+   itself becomes the affordance. */
+.cursor-ring.is-active {
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  background: rgba(99, 102, 241, 0.12);
+  border-color: var(--brand-500);
+}
+
+/* ------------------------------------------------------------------
+   EFFECT 4: LOADER
+   ------------------------------------------------------------------ */
+
+.loader-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  gap: var(--space-4);
+}
+
+.loader-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius);
+  border: 3px solid var(--brand-100);
+  border-top-color: var(--brand-600);
+  animation: spin 700ms linear infinite;
+}
+
+.loader-label {
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+  letter-spacing: 0.02em;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Inline loader for sections rather than the whole page. */
+.loader-inline {
+  display: grid;
+  place-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+}
+
+.loader-inline .loader-mark {
+  width: 32px;
+  height: 32px;
+  border-width: 2.5px;
+}
+
+/* Skeletons: shown while list data loads, so the layout does not jump
+   when real content arrives. */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-muted) 25%,
+    var(--bg-subtle) 50%,
+    var(--bg-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton-card {
+  height: 210px;
+  border-radius: var(--radius-lg);
+}
+
+/* Thin progress bar shown on route change — effect 4, page transitions. */
+.route-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  z-index: 250;
+  background: linear-gradient(90deg, var(--brand-400), var(--brand-600));
+  transform-origin: left;
+  animation: route-bar 600ms var(--ease-out) forwards;
+}
+
+@keyframes route-bar {
+  0% { transform: scaleX(0); opacity: 1; }
+  70% { transform: scaleX(0.85); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+
+/* ------------------------------------------------------------------
+   UTILITIES
+   ------------------------------------------------------------------ */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.text-muted { color: var(--text-muted); }
+.text-subtle { color: var(--text-subtle); font-size: var(--text-sm); }
+.text-center { text-align: center; }
+.mt-4 { margin-top: var(--space-4); }
+.mt-6 { margin-top: var(--space-6); }

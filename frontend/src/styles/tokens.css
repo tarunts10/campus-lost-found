@@ -1,0 +1,151 @@
+/**
+ * tokens.css — the design system's single source of truth.
+ *
+ * Every colour, space, radius, shadow and duration used anywhere in the
+ * app is defined here as a CSS custom property. Components never invent
+ * their own values. That is what makes the pages feel like one product
+ * instead of a collection of unrelated screens.
+ *
+ * Changing the brand colour is a one-line edit in this file.
+ */
+
+:root {
+  /* --- Brand -----------------------------------------------------
+     A deep institutional indigo. Chosen to read as trustworthy and
+     administrative rather than playful — this app handles other
+     people's lost property. */
+  --brand-50: #eef2ff;
+  --brand-100: #e0e7ff;
+  --brand-200: #c7d2fe;
+  --brand-300: #a5b4fc;
+  --brand-400: #818cf8;
+  --brand-500: #6366f1;
+  --brand-600: #4f46e5;
+  --brand-700: #4338ca;
+  --brand-800: #3730a3;
+  --brand-900: #312e81;
+
+  /* --- Semantic status colours ----------------------------------
+     LOST / FOUND and the claim statuses are the most important
+     information in the product, so they get dedicated colours that
+     are used consistently everywhere. */
+  --lost: #dc2626;
+  --lost-bg: #fef2f2;
+  --lost-border: #fecaca;
+
+  --found: #059669;
+  --found-bg: #ecfdf5;
+  --found-border: #a7f3d0;
+
+  --pending: #d97706;
+  --pending-bg: #fffbeb;
+  --pending-border: #fde68a;
+
+  --approved: #059669;
+  --approved-bg: #ecfdf5;
+  --approved-border: #a7f3d0;
+
+  --rejected: #6b7280;
+  --rejected-bg: #f9fafb;
+  --rejected-border: #e5e7eb;
+
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+
+  /* --- Neutrals -------------------------------------------------- */
+  --bg: #ffffff;
+  --bg-subtle: #f8fafc;
+  --bg-muted: #f1f5f9;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  --text: #0f172a;
+  --text-muted: #475569;
+  --text-subtle: #64748b;
+  --text-inverse: #ffffff;
+
+  /* --- Spacing scale ---------------------------------------------
+     A 4px base. Using a scale rather than arbitrary pixel values is
+     what keeps vertical rhythm consistent across pages. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+
+  /* --- Typography ------------------------------------------------ */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, sans-serif;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+
+  /* --- Radius ----------------------------------------------------- */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 999px;
+
+  /* --- Shadows ----------------------------------------------------
+     Layered rather than a single blur, so elevation reads naturally. */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.12), 0 4px 8px rgba(15, 23, 42, 0.06);
+  --shadow-brand: 0 8px 24px rgba(79, 70, 229, 0.25);
+
+  /* --- Motion -----------------------------------------------------
+     Two easings only. `--ease-out` for things entering (fast then
+     settling, which feels responsive) and `--ease-spring` for hover
+     lifts (a slight overshoot reads as physical). */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration: 250ms;
+  --duration-slow: 500ms;
+
+  /* --- Layout ------------------------------------------------------ */
+  --container: 1180px;
+  --navbar-height: 68px;
+}
+
+/**
+ * ACCESSIBILITY — respect the operating system's reduced-motion setting.
+ *
+ * Every animation in this app is driven by the duration tokens above or
+ * by a class defined in base.css. Collapsing the durations to ~0 here
+ * disables the whole motion system in one place, rather than requiring
+ * every component to remember to check.
+ *
+ * Motion sickness and vestibular disorders are real; parallax and 3D
+ * tilt are exactly the effects that trigger them.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0.01ms;
+    --duration: 0.01ms;
+    --duration-slow: 0.01ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
