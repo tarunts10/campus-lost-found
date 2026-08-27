@@ -54,7 +54,55 @@ const DEV_PLACEHOLDER_USER_ID = new mongoose.Types.ObjectId(
  * "return everything", and the caller cannot tell that from a genuine
  * empty-filter request. A typo becomes a silent wrong answer.
  */
-const ALLOWED_QUERY_PARAMS = ['type', 'status', 'category'];
+const ALLOWED_QUERY_PARAMS = ['type', 'status', 'category', 'page', 'limit'];
+
+/**
+ * Pagination defaults and bounds.
+ *
+ * MAX_LIMIT exists for protection, not tidiness. Without a cap, a client
+ * could send ?limit=1000000 and force the server to load the entire
+ * collection into memory and serialise it to JSON — a cheap way to
+ * exhaust the server's memory. The cap makes the worst case bounded.
+ */
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 100;
+
+/**
+ * Helper: parse a pagination parameter that must be a positive integer.
+ *
+ * Query values are ALWAYS strings ("2", never 2), so this must convert
+ * and validate. Number() is used rather than parseInt() deliberately:
+ * parseInt('10abc') returns 10 and silently accepts nonsense, whereas
+ * Number('10abc') returns NaN and lets us reject it.
+ */
+const parsePositiveInt = (value, fieldName, { max } = {}) => {
+  if (typeof value !== 'string') {
+    const error = new Error(`Invalid ${fieldName}. Expected a single number.`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    const error = new Error(
+      `Invalid ${fieldName} '${value}'. Must be a whole number of 1 or more.`
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (max !== undefined && parsed > max) {
+    const error = new Error(
+      `Invalid ${fieldName} '${value}'. Maximum allowed is ${max}.`
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return parsed;
+};
 
 /**
  * Helper: normalise and validate a query filter value.
@@ -106,6 +154,27 @@ const parseEnumFilter = (value, allowed, fieldName) => {
  * Create a new lost or found item report.
  */
 export const createItem = async (req, res) => {
+  /**
+   * Guard: make sure a JSON body was actually parsed.
+   *
+   * express.json() only parses bodies whose Content-Type is
+   * application/json. If the header is missing, it skips silently and
+   * req.body stays undefined — and destructuring undefined throws a
+   * TypeError, which would surface as a 500.
+   *
+   * That would be wrong: forgetting the header is the CLIENT's mistake,
+   * so it must be a 4xx. Naming Content-Type in the message turns a
+   * confusing "server error" into an obvious fix.
+   */
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    const error = new Error(
+      'Request body must be a JSON object. Did you set the ' +
+        'Content-Type: application/json header?'
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
   /**
    * SECURITY — explicit field picking, NOT `Item.create(req.body)`.
    *
@@ -184,7 +253,7 @@ export const getItems = async (req, res) => {
   if (unknownParams.length > 0) {
     const error = new Error(
       `Unknown query parameter(s): ${unknownParams.join(', ')}. ` +
-        `Allowed filters: ${ALLOWED_QUERY_PARAMS.join(', ')}`
+        `Allowed parameters: ${ALLOWED_QUERY_PARAMS.join(', ')}`
     );
     error.statusCode = 400;
     throw error;
@@ -207,14 +276,64 @@ export const getItems = async (req, res) => {
   }
 
   /**
-   * .sort({ createdAt: -1 }) — newest first.
-   * -1 is descending, 1 is ascending. Recent reports are the useful ones.
+   * PAGINATION
+   *
+   * Why it exists: `Item.find(filter)` with no limit returns EVERY matching
+   * document. That is fine with 4 items and catastrophic with 50,000 — the
+   * server loads them all into memory, serialises megabytes of JSON, and the
+   * client waits. Pagination makes the cost of a request constant rather
+   * than growing with the size of the collection.
    */
-  const items = await Item.find(filter).sort({ createdAt: -1 });
+  const page =
+    req.query.page !== undefined
+      ? parsePositiveInt(req.query.page, 'page')
+      : DEFAULT_PAGE;
+
+  const limit =
+    req.query.limit !== undefined
+      ? parsePositiveInt(req.query.limit, 'limit', { max: MAX_LIMIT })
+      : DEFAULT_LIMIT;
+
+  /**
+   * skip = how many documents to step over before collecting results.
+   *   page 1, limit 10 -> skip 0   (items 1-10)
+   *   page 2, limit 10 -> skip 10  (items 11-20)
+   */
+  const skip = (page - 1) * limit;
+
+  /**
+   * Two queries are needed: one for this page of documents, one for the
+   * TOTAL count of matches. The count is what lets the client know how many
+   * pages exist — .find() alone can never tell you that.
+   *
+   * Promise.all runs them concurrently instead of one after the other.
+   * Both are independent, so waiting for the first before starting the
+   * second would roughly double the response time for no reason. This is
+   * the single-threaded event loop being useful: while one query is in
+   * flight, the thread is free to issue the other.
+   */
+  const [items, total] = await Promise.all([
+    Item.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    Item.countDocuments(filter),
+  ]);
+
+  /**
+   * Math.ceil, because a remainder still needs a whole page:
+   * 25 items at 10 per page is 3 pages, not 2.5.
+   */
+  const totalPages = Math.ceil(total / limit);
 
   res.status(200).json({
     success: true,
-    count: items.length,
+    count: items.length, // how many are in THIS page
+    pagination: {
+      page,
+      limit,
+      total, // total matching the filter, across all pages
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+    },
     data: items,
   });
 };
