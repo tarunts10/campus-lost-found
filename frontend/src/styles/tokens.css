@@ -1,19 +1,35 @@
 /**
  * tokens.css — the design system's single source of truth.
  *
- * Every colour, space, radius, shadow and duration used anywhere in the
- * app is defined here as a CSS custom property. Components never invent
- * their own values. That is what makes the pages feel like one product
- * instead of a collection of unrelated screens.
+ * =====================  THEME ARCHITECTURE  =====================
  *
- * Changing the brand colour is a one-line edit in this file.
+ * Two layers, and the separation is what makes theming maintainable:
+ *
+ *   1. RAW PALETTE  — literal colour values. Every dark-mode colour is
+ *                     declared exactly ONCE here, as a --d-* variable.
+ *   2. SEMANTIC     — what a colour MEANS (--bg, --text, --border).
+ *                     Components only ever use these.
+ *
+ * A component says `background: var(--surface)`. It never knows which
+ * theme is active. Switching themes just remaps the semantic names.
+ *
+ * Because the dark VALUES live in one place, changing a dark colour is a
+ * single-line edit. The two dark selectors below repeat the mapping
+ * (plain CSS has no way to share a declaration block between a media
+ * query and a plain selector), but they contain no literal colours.
+ *
+ * THREE THEME STATES:
+ *   no attribute + light OS  -> light
+ *   no attribute + dark OS   -> dark   (respects the OS preference)
+ *   data-theme="light"       -> light  (explicit user choice wins)
+ *   data-theme="dark"        -> dark   (explicit user choice wins)
  */
 
 :root {
-  /* --- Brand -----------------------------------------------------
-     A deep institutional indigo. Chosen to read as trustworthy and
-     administrative rather than playful — this app handles other
-     people's lost property. */
+  /* ================================================================
+     RAW PALETTE — brand ramp. Identical in both themes; the SEMANTIC
+     layer below decides which steps each theme uses.
+     ================================================================ */
   --brand-50: #eef2ff;
   --brand-100: #e0e7ff;
   --brand-200: #c7d2fe;
@@ -25,38 +41,72 @@
   --brand-800: #3730a3;
   --brand-900: #312e81;
 
-  /* --- Semantic status colours ----------------------------------
-     LOST / FOUND and the claim statuses are the most important
-     information in the product, so they get dedicated colours that
-     are used consistently everywhere. */
-  --lost: #dc2626;
-  --lost-bg: #fef2f2;
-  --lost-border: #fecaca;
+  /* ================================================================
+     DARK PALETTE — every dark-theme colour, declared once.
+     Unused while the light theme is active.
 
-  --found: #059669;
-  --found-bg: #ecfdf5;
-  --found-border: #a7f3d0;
+     Deliberately NOT pure black. #0b1120 is a very dark desaturated
+     navy: pure black against white text produces harsh halation and
+     reads as an unfinished "inverted" page rather than a designed one.
+     Surfaces step up in lightness (bg -> subtle -> surface) so
+     elevation still reads without relying on shadows, which are nearly
+     invisible on dark backgrounds.
+     ================================================================ */
+  --d-bg: #0b1120;
+  --d-bg-subtle: #111827;
+  --d-bg-muted: #1a2234;
+  --d-surface: #151d2e;
+  --d-surface-raised: #1c2537;
 
-  --pending: #d97706;
-  --pending-bg: #fffbeb;
-  --pending-border: #fde68a;
+  --d-border: #253044;
+  --d-border-strong: #35435c;
 
-  --approved: #059669;
-  --approved-bg: #ecfdf5;
-  --approved-border: #a7f3d0;
+  /* Text steps down in contrast, never below WCAG AA on --d-bg.
+     #e6edf7 on #0b1120 is roughly 15:1. */
+  --d-text: #e6edf7;
+  --d-text-muted: #a6b4c8;
+  --d-text-subtle: #7d8da5;
 
-  --rejected: #6b7280;
-  --rejected-bg: #f9fafb;
-  --rejected-border: #e5e7eb;
+  /* Brand shifts LIGHTER in dark mode. brand-600 (#4f46e5) on a dark
+     background is too low-contrast to read; brand-400 carries. */
+  --d-brand-text: #a5b4fc;
+  --d-brand-action: #a5b4fc;
+  --d-brand-action-hover: #c7d2fe;
+  --d-brand-on-action: #0b1120;
+  --d-brand-tint: #1e213a;
+  --d-brand-tint-border: #343a6b;
 
-  --danger: #dc2626;
-  --danger-bg: #fef2f2;
+  /* Status colours brightened for a dark ground, with dark tinted
+     backgrounds rather than the pale ones used in light mode. */
+  --d-lost: #f87171;
+  --d-lost-bg: #2a1416;
+  --d-lost-border: #4d2226;
 
-  /* --- Neutrals -------------------------------------------------- */
+  --d-found: #34d399;
+  --d-found-bg: #0d2620;
+  --d-found-border: #1a4438;
+
+  --d-pending: #fbbf24;
+  --d-pending-bg: #2a2010;
+  --d-pending-border: #4a3a18;
+
+  --d-neutral: #94a3b8;
+  --d-neutral-bg: #1a2234;
+  --d-neutral-border: #2c3852;
+
+  /* ================================================================
+     SEMANTIC TOKENS — LIGHT THEME (the default)
+     Components reference only these names.
+     ================================================================ */
+
+  color-scheme: light;
+
   --bg: #ffffff;
   --bg-subtle: #f8fafc;
   --bg-muted: #f1f5f9;
   --surface: #ffffff;
+  --surface-raised: #ffffff;
+
   --border: #e2e8f0;
   --border-strong: #cbd5e1;
 
@@ -65,9 +115,53 @@
   --text-subtle: #64748b;
   --text-inverse: #ffffff;
 
-  /* --- Spacing scale ---------------------------------------------
-     A 4px base. Using a scale rather than arbitrary pixel values is
-     what keeps vertical rhythm consistent across pages. */
+  /* Brand roles, so components never pick a ramp step directly. */
+  --brand-text: var(--brand-700);
+  /* brand-600 with white text measured 4.47:1 — just under AA for
+     14px button text. brand-700 clears it comfortably. */
+  --brand-action: var(--brand-700);
+  --brand-action-hover: var(--brand-800);
+  --brand-on-action: #ffffff;
+  --brand-tint: var(--brand-50);
+  --brand-tint-border: var(--brand-200);
+  --brand-focus: var(--brand-100);
+
+  /* Status */
+  /* Darkened from #dc2626: at 12px bold on --lost-bg that measured
+     4.41:1, which is below AA for text this size. */
+  --lost: #b91c1c;
+  --lost-bg: #fef2f2;
+  --lost-border: #fecaca;
+
+  /* Darkened from #059669 (measured 3.58:1). */
+  --found: #047857;
+  --found-bg: #ecfdf5;
+  --found-border: #a7f3d0;
+
+  /* Darkened from #d97706 (measured 3.07:1). */
+  --pending: #b45309;
+  --pending-bg: #fffbeb;
+  --pending-border: #fde68a;
+
+  --approved: var(--found);
+  --approved-bg: var(--found-bg);
+  --approved-border: var(--found-border);
+
+  --rejected: #6b7280;
+  --rejected-bg: #f9fafb;
+  --rejected-border: #e5e7eb;
+
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+
+  /* Surfaces that sit over a translucent backdrop. */
+  --navbar-bg: rgba(255, 255, 255, 0.85);
+  --hero-glow-1: rgba(99, 102, 241, 0.32);
+  --hero-glow-2: rgba(16, 185, 129, 0.22);
+  --skeleton-from: var(--bg-muted);
+  --skeleton-to: var(--bg-subtle);
+
+  /* --- Spacing (4px base) ------------------------------------------ */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -78,7 +172,7 @@
   --space-8: 4rem;
   --space-9: 6rem;
 
-  /* --- Typography ------------------------------------------------ */
+  /* --- Typography --------------------------------------------------- */
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system,
     'Segoe UI', Roboto, sans-serif;
 
@@ -92,45 +186,175 @@
   --text-4xl: 2.25rem;
   --text-5xl: 3rem;
 
-  /* --- Radius ----------------------------------------------------- */
+  /* --- Radius ------------------------------------------------------- */
   --radius-sm: 6px;
   --radius: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
   --radius-full: 999px;
 
-  /* --- Shadows ----------------------------------------------------
-     Layered rather than a single blur, so elevation reads naturally. */
+  /* --- Shadows ------------------------------------------------------ */
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
   --shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
   --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04);
   --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.12), 0 4px 8px rgba(15, 23, 42, 0.06);
   --shadow-brand: 0 8px 24px rgba(79, 70, 229, 0.25);
 
-  /* --- Motion -----------------------------------------------------
-     Two easings only. `--ease-out` for things entering (fast then
-     settling, which feels responsive) and `--ease-spring` for hover
-     lifts (a slight overshoot reads as physical). */
+  /* --- Motion ------------------------------------------------------- */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --duration-fast: 150ms;
   --duration: 250ms;
   --duration-slow: 500ms;
 
-  /* --- Layout ------------------------------------------------------ */
+  /* --- Layout ------------------------------------------------------- */
   --container: 1180px;
   --navbar-height: 68px;
 }
 
 /**
+ * ================================================================
+ * DARK THEME MAPPING
+ *
+ * Two selectors, one mapping. Neither contains a literal colour —
+ * they only point semantic names at the --d-* palette above.
+ *
+ * (A) OS prefers dark AND the user has not explicitly chosen light.
+ * ================================================================
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --bg: var(--d-bg);
+    --bg-subtle: var(--d-bg-subtle);
+    --bg-muted: var(--d-bg-muted);
+    --surface: var(--d-surface);
+    --surface-raised: var(--d-surface-raised);
+
+    --border: var(--d-border);
+    --border-strong: var(--d-border-strong);
+
+    --text: var(--d-text);
+    --text-muted: var(--d-text-muted);
+    --text-subtle: var(--d-text-subtle);
+
+    --brand-text: var(--d-brand-text);
+    --brand-action: var(--d-brand-action);
+    --brand-action-hover: var(--d-brand-action-hover);
+    --brand-on-action: var(--d-brand-on-action);
+    --brand-tint: var(--d-brand-tint);
+    --brand-tint-border: var(--d-brand-tint-border);
+    --brand-focus: var(--d-brand-tint-border);
+
+    --lost: var(--d-lost);
+    --lost-bg: var(--d-lost-bg);
+    --lost-border: var(--d-lost-border);
+
+    --found: var(--d-found);
+    --found-bg: var(--d-found-bg);
+    --found-border: var(--d-found-border);
+
+    --pending: var(--d-pending);
+    --pending-bg: var(--d-pending-bg);
+    --pending-border: var(--d-pending-border);
+
+    --approved: var(--d-found);
+    --approved-bg: var(--d-found-bg);
+    --approved-border: var(--d-found-border);
+
+    --rejected: var(--d-neutral);
+    --rejected-bg: var(--d-neutral-bg);
+    --rejected-border: var(--d-border);
+
+    --danger: var(--d-lost);
+    --danger-bg: var(--d-lost-bg);
+
+    --navbar-bg: rgba(11, 17, 32, 0.85);
+    --hero-glow-1: rgba(99, 102, 241, 0.22);
+    --hero-glow-2: rgba(16, 185, 129, 0.14);
+    --skeleton-from: var(--d-bg-muted);
+    --skeleton-to: var(--d-surface-raised);
+
+    /* Shadows are near-invisible on dark surfaces, so they go deeper
+       and elevation is carried mainly by the surface lightness steps. */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.55);
+    --shadow-brand: 0 8px 24px rgba(99, 102, 241, 0.28);
+  }
+}
+
+/**
+ * (B) The user explicitly chose dark. Wins regardless of the OS setting.
+ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: var(--d-bg);
+  --bg-subtle: var(--d-bg-subtle);
+  --bg-muted: var(--d-bg-muted);
+  --surface: var(--d-surface);
+  --surface-raised: var(--d-surface-raised);
+
+  --border: var(--d-border);
+  --border-strong: var(--d-border-strong);
+
+  --text: var(--d-text);
+  --text-muted: var(--d-text-muted);
+  --text-subtle: var(--d-text-subtle);
+
+  --brand-text: var(--d-brand-text);
+  --brand-action: var(--d-brand-action);
+  --brand-action-hover: var(--d-brand-action-hover);
+  --brand-on-action: var(--d-brand-on-action);
+  --brand-tint: var(--d-brand-tint);
+  --brand-tint-border: var(--d-brand-tint-border);
+  --brand-focus: var(--d-brand-tint-border);
+
+  --lost: var(--d-lost);
+  --lost-bg: var(--d-lost-bg);
+  --lost-border: var(--d-lost-border);
+
+  --found: var(--d-found);
+  --found-bg: var(--d-found-bg);
+  --found-border: var(--d-found-border);
+
+  --pending: var(--d-pending);
+  --pending-bg: var(--d-pending-bg);
+  --pending-border: var(--d-pending-border);
+
+  --approved: var(--d-found);
+  --approved-bg: var(--d-found-bg);
+  --approved-border: var(--d-found-border);
+
+  --rejected: var(--d-neutral);
+  --rejected-bg: var(--d-neutral-bg);
+  --rejected-border: var(--d-border);
+
+  --danger: var(--d-lost);
+  --danger-bg: var(--d-lost-bg);
+
+  --navbar-bg: rgba(11, 17, 32, 0.85);
+  --hero-glow-1: rgba(99, 102, 241, 0.22);
+  --hero-glow-2: rgba(16, 185, 129, 0.14);
+  --skeleton-from: var(--d-bg-muted);
+  --skeleton-to: var(--d-surface-raised);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.55);
+  --shadow-brand: 0 8px 24px rgba(99, 102, 241, 0.28);
+}
+
+/**
  * ACCESSIBILITY — respect the operating system's reduced-motion setting.
  *
- * Every animation in this app is driven by the duration tokens above or
- * by a class defined in base.css. Collapsing the durations to ~0 here
- * disables the whole motion system in one place, rather than requiring
- * every component to remember to check.
- *
- * Motion sickness and vestibular disorders are real; parallax and 3D
+ * Collapsing the duration tokens disables the whole motion system from
+ * one place, rather than requiring every component to remember to check.
+ * Motion sickness and vestibular disorders are real, and parallax and 3D
  * tilt are exactly the effects that trigger them.
  */
 @media (prefers-reduced-motion: reduce) {

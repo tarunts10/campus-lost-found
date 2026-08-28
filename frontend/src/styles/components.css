@@ -49,14 +49,14 @@
 }
 
 .btn-primary {
-  background: var(--brand-600);
-  color: var(--text-inverse);
+  background: var(--brand-action);
+  color: var(--brand-on-action);
   box-shadow: var(--shadow-sm);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--brand-700);
-  color: var(--text-inverse);
+  background: var(--brand-action-hover);
+  color: var(--brand-on-action);
   box-shadow: var(--shadow-brand);
 }
 
@@ -69,8 +69,8 @@
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--bg-subtle);
-  border-color: var(--brand-300);
-  color: var(--brand-700);
+  border-color: var(--brand-tint-border);
+  color: var(--brand-text);
   box-shadow: var(--shadow-md);
 }
 
@@ -127,7 +127,7 @@
 .card-hover:hover {
   transform: translateY(-3px);
   box-shadow: var(--shadow-lg);
-  border-color: var(--brand-200);
+  border-color: var(--brand-tint-border);
 }
 
 /**
@@ -191,7 +191,7 @@
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-.card-hover:hover .item-card h3 { color: var(--brand-700); }
+.card-hover:hover .item-card h3 { color: var(--brand-text); }
 
 .item-card-desc {
   color: var(--text-muted);
@@ -234,7 +234,7 @@
 
 .badge-lost      { color: var(--lost);     background: var(--lost-bg);     border-color: var(--lost-border); }
 .badge-found     { color: var(--found);    background: var(--found-bg);    border-color: var(--found-border); }
-.badge-active    { color: var(--brand-700);background: var(--brand-50);    border-color: var(--brand-200); }
+.badge-active    { color: var(--brand-text);  background: var(--brand-tint);  border-color: var(--brand-tint-border); }
 .badge-claimed   { color: var(--pending);  background: var(--pending-bg);  border-color: var(--pending-border); }
 .badge-resolved  { color: var(--rejected); background: var(--rejected-bg); border-color: var(--rejected-border); }
 .badge-pending   { color: var(--pending);  background: var(--pending-bg);  border-color: var(--pending-border); }
@@ -280,14 +280,14 @@
 
 .input:hover,
 .select:hover,
-.textarea:hover { border-color: var(--brand-300); }
+.textarea:hover { border-color: var(--brand-tint-border); }
 
 .input:focus,
 .select:focus,
 .textarea:focus {
   outline: none;
-  border-color: var(--brand-500);
-  box-shadow: 0 0 0 3px var(--brand-100);
+  border-color: var(--brand-action);
+  box-shadow: 0 0 0 3px var(--brand-focus);
 }
 
 .textarea {
@@ -347,7 +347,7 @@
 
 .alert-error   { color: var(--danger);   background: var(--danger-bg);   border-color: var(--lost-border); }
 .alert-success { color: var(--approved); background: var(--approved-bg); border-color: var(--approved-border); }
-.alert-info    { color: var(--brand-700);background: var(--brand-50);    border-color: var(--brand-200); }
+.alert-info    { color: var(--brand-text);  background: var(--brand-tint);  border-color: var(--brand-tint-border); }
 
 /* ------------------------------------------------------------------
    STATE BLOCKS — empty / error
@@ -599,15 +599,15 @@
 }
 
 .image-add:hover {
-  border-color: var(--brand-400);
-  background: var(--brand-50);
-  color: var(--brand-700);
+  border-color: var(--brand-action-hover);
+  background: var(--brand-tint);
+  color: var(--brand-text);
 }
 
 /* The real <input type="file"> is visually hidden, so the focus ring has
    to be projected onto the label or keyboard users get no indication. */
 .image-add:has(input:focus-visible) {
-  outline: 3px solid var(--brand-400);
+  outline: 3px solid var(--brand-action-hover);
   outline-offset: 2px;
 }
 
@@ -694,7 +694,7 @@
 
 .detail-thumb.is-active {
   opacity: 1;
-  border-color: var(--brand-600);
+  border-color: var(--brand-action);
 }
 
 /* --- Navbar institution ------------------------------------------- */
@@ -707,5 +707,124 @@
 .nav-institution {
   font-size: var(--text-xs);
   font-weight: 500;
+  color: var(--text-subtle);
+}
+
+/* ==================================================================
+   THEME TOGGLE
+   ================================================================== */
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+  background: var(--bg-muted);
+  border-color: var(--border-strong);
+}
+
+.theme-toggle-icon {
+  font-size: var(--text-base);
+  line-height: 1;
+}
+
+/* The word is redundant for sighted users once the icon is learned, and
+   the header is tight on small screens. The accessible name on the
+   button always carries the full state, so hiding it costs nothing. */
+@media (max-width: 1040px) {
+  .theme-toggle-text { display: none; }
+}
+
+@media (max-width: 860px) {
+  .theme-toggle { width: 100%; justify-content: center; }
+  .theme-toggle-text { display: inline; }
+}
+
+/* ==================================================================
+   ITEM CARD — image placeholder (Part 4)
+   ================================================================== */
+
+/**
+ * Shown when a report has no photo.
+ *
+ * A clean, deliberate placeholder rather than a missing/broken image or
+ * a collapsed card: every card in the grid then has the same silhouette,
+ * so rows align and the grid does not look ragged.
+ */
+.item-card-thumb-placeholder {
+  display: grid;
+  place-items: center;
+  gap: var(--space-1);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      var(--bg-subtle),
+      var(--bg-subtle) 10px,
+      var(--bg-muted) 10px,
+      var(--bg-muted) 20px
+    );
+  color: var(--text-subtle);
+}
+
+.item-card-thumb-placeholder .placeholder-icon {
+  font-size: var(--text-3xl);
+  line-height: 1;
+  opacity: 0.55;
+}
+
+.item-card-thumb-placeholder .placeholder-text {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* ==================================================================
+   BUTTON LOADING STATE (Parts 7 + 9.4)
+   ================================================================== */
+
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: spin 600ms linear infinite;
+  flex-shrink: 0;
+}
+
+/* With motion reduced the ring would freeze mid-rotation and read as a
+   broken glyph, so show a static, clearly-intentional ring instead. */
+@media (prefers-reduced-motion: reduce) {
+  .btn-spinner {
+    animation: none;
+    border-top-color: currentColor;
+    opacity: 0.6;
+  }
+}
+
+/* Reserved-height results line, so the grid never shifts when the count
+   replaces the loading text. */
+.results-count {
+  min-height: 1.5rem;
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
   color: var(--text-subtle);
 }

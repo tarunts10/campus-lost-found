@@ -147,7 +147,7 @@ export default function MyClaimsPage() {
             onClick={() => handleDecision(claim._id, 'APPROVED')}
             disabled={deciding === claim._id}
           >
-            {deciding === claim._id ? 'Working…' : 'Approve'}
+            {deciding === claim._id ? (<><span className="btn-spinner" aria-hidden="true" />Working…</>) : ('Approve')}
           </button>
           <button
             type="button"

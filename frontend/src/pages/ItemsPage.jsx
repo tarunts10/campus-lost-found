@@ -205,11 +205,24 @@ export default function ItemsPage() {
         )}
 
         {/* Announced to screen readers when the count changes. */}
-        {!loading && !error && pagination && (
-          <p className="text-subtle" aria-live="polite" style={{ marginBottom: 'var(--space-4)' }}>
-            {pagination.total} item{pagination.total === 1 ? '' : 's'} found
-          </p>
-        )}
+        {/*
+          Always rendered, even while loading, so the results grid keeps a
+          fixed starting position and does not jump up the page when the
+          count arrives.
+        */}
+        <p
+          className="results-count"
+          aria-live="polite"
+          {...(loading ? { 'aria-busy': 'true' } : {})}
+        >
+          {loading
+            ? 'Searching…'
+            : error
+              ? ' '
+              : pagination
+                ? `${pagination.total} item${pagination.total === 1 ? '' : 's'} found`
+                : ' '}
+        </p>
 
         {/* -------------------------------------------- THE FOUR STATES */}
         {loading ? (
@@ -222,11 +235,15 @@ export default function ItemsPage() {
           />
         ) : items.length === 0 ? (
           <EmptyState
-            title="No items found"
+            title={
+              hasFilters
+                ? 'No lost or found items match your search'
+                : 'Nothing reported yet at your institution'
+            }
             message={
               hasFilters
-                ? 'No items match these filters. Try widening your search.'
-                : 'Nothing has been reported yet. Be the first.'
+                ? 'Try a different keyword, or clear a filter to widen the search.'
+                : 'Items reported by members of your institution will appear here.'
             }
             action={
               hasFilters ? (

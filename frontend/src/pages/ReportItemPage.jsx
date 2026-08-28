@@ -276,7 +276,14 @@ export default function ReportItemPage() {
 
           <div className="row">
             <button type="submit" className="btn btn-primary btn-lg" disabled={submitting}>
-              {submitting ? 'Submitting…' : 'Submit report'}
+              {submitting ? (
+                <>
+                  <span className="btn-spinner" aria-hidden="true" />
+                  Submitting…
+                </>
+              ) : (
+                'Submit report'
+              )}
             </button>
             <button
               type="button"

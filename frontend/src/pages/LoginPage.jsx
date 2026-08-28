@@ -15,6 +15,7 @@ export default function LoginPage() {
   const location = useLocation();
 
   const [form, setForm] = useState({ email: '', password: '' });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -29,15 +30,64 @@ export default function LoginPage() {
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
+
+    // Clear a field's error as soon as the user starts correcting it.
+    setFieldErrors((current) => ({ ...current, [name]: undefined }));
+  };
+
+  /**
+   * Client-side checks before anything is sent.
+   *
+   * The form carries `noValidate`, which switches OFF the browser's own
+   * required/type checking so we can show our own consistently styled
+   * messages. Without a replacement, submitting the form empty sent
+   * {"email":"","password":""} to the API and surfaced the backend's raw
+   * validation string ("email: Must be a valid email address. password:
+   * Password is required") as if something had gone wrong.
+   *
+   * This is UX only. The backend validates every field again and remains
+   * the authority — nothing here weakens that.
+   */
+  const validate = () => {
+    const errors = {};
+
+    if (!form.email.trim()) {
+      errors.email = 'Enter your college email';
+    } else if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) {
+      errors.email = 'Enter a valid email address';
+    }
+
+    if (!form.password) {
+      errors.password = 'Enter your password';
+    }
+
+    return errors;
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
+
+    const errors = validate();
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return; // no request is made
+    }
+
     setSubmitting(true);
 
     try {
-      await login(form);
+      /**
+       * Send the trimmed email and the password exactly as typed.
+       *
+       * Trimming the email matches what the backend does during
+       * validation, so a stray copy-paste space cannot cause a
+       * confusing "invalid email" rejection. The password is NEVER
+       * trimmed — leading or trailing spaces are legitimate characters
+       * in a password.
+       */
+      await login({ email: form.email.trim(), password: form.password });
       navigate(redirectTo, { replace: true });
     } catch (err) {
       /**
@@ -81,8 +131,15 @@ export default function LoginPage() {
                 onChange={handleChange}
                 autoComplete="email"
                 required
+                aria-invalid={Boolean(fieldErrors.email)}
+                aria-describedby={fieldErrors.email ? 'login-email-error' : undefined}
                 placeholder="you@college.edu"
               />
+              {fieldErrors.email && (
+                <p id="login-email-error" className="field-error">
+                  {fieldErrors.email}
+                </p>
+              )}
             </div>
 
             <div className="field">
@@ -96,8 +153,15 @@ export default function LoginPage() {
                 onChange={handleChange}
                 autoComplete="current-password"
                 required
+                aria-invalid={Boolean(fieldErrors.password)}
+                aria-describedby={fieldErrors.password ? 'login-password-error' : undefined}
                 placeholder="Your password"
               />
+              {fieldErrors.password && (
+                <p id="login-password-error" className="field-error">
+                  {fieldErrors.password}
+                </p>
+              )}
             </div>
 
             <button
@@ -105,7 +169,14 @@ export default function LoginPage() {
               className="btn btn-primary btn-lg btn-block"
               disabled={submitting}
             >
-              {submitting ? 'Signing in…' : 'Sign in'}
+              {submitting ? (
+                <>
+                  <span className="btn-spinner" aria-hidden="true" />
+                  Signing in…
+                </>
+              ) : (
+                'Sign in'
+              )}
             </button>
           </form>
 

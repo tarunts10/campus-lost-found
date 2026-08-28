@@ -41,16 +41,35 @@ export default function ItemCard({ item, index = 0 }) {
         aria-label={`${item.type === 'LOST' ? 'Lost' : 'Found'} item: ${item.title}`}
       >
         {/*
-          Thumbnail, when the report has photos. Falls back to the
-          category emoji layout below when it does not, so cards without
-          images do not leave an empty grey box.
+          Every card gets a media area, image or not, so the whole grid
+          shares one silhouette and rows line up. A missing photo shows a
+          deliberate placeholder rather than a collapsed or broken image.
         */}
-        {item.images?.length > 0 && (
+        {item.images?.length > 0 ? (
           <div className="item-card-thumb">
-            <img src={item.images[0].url} alt={item.images[0].name} loading="lazy" />
+            <img
+              src={item.images[0].url}
+              /* Real alt text: the item title describes the picture far
+                 better than the uploaded filename does. */
+              alt={item.title}
+              loading="lazy"
+            />
             {item.images.length > 1 && (
-              <span className="item-card-thumb-count">+{item.images.length - 1}</span>
+              <span className="item-card-thumb-count">
+                +{item.images.length - 1}
+                <span className="sr-only"> more photos</span>
+              </span>
             )}
+          </div>
+        ) : (
+          <div
+            className="item-card-thumb item-card-thumb-placeholder"
+            aria-hidden="true"
+          >
+            <span className="placeholder-icon">
+              {CATEGORY_ICONS[item.category] || '\u{1F4E6}'}
+            </span>
+            <span className="placeholder-text">No photo</span>
           </div>
         )}
 

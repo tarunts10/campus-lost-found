@@ -386,7 +386,7 @@ export default function ItemDetailPage() {
 
                 <div className="row">
                   <button type="submit" className="btn btn-primary" disabled={saving}>
-                    {saving ? 'Saving…' : 'Save changes'}
+                    {saving ? (<><span className="btn-spinner" aria-hidden="true" />Saving…</>) : ('Save changes')}
                   </button>
                   <button
                     type="button"
@@ -511,7 +511,7 @@ export default function ItemDetailPage() {
                         onClick={handleDelete}
                         disabled={deleting}
                       >
-                        {deleting ? 'Deleting…' : 'Delete'}
+                        {deleting ? (<><span className="btn-spinner" aria-hidden="true" />Deleting…</>) : ('Delete')}
                       </button>
                     </div>
                   )}
@@ -562,7 +562,7 @@ export default function ItemDetailPage() {
                     className="btn btn-primary btn-block"
                     disabled={claimSubmitting || claimMessage.trim().length < 20}
                   >
-                    {claimSubmitting ? 'Submitting…' : 'Submit claim'}
+                    {claimSubmitting ? (<><span className="btn-spinner" aria-hidden="true" />Submitting…</>) : ('Submit claim')}
                   </button>
                 </form>
               </section>
@@ -642,7 +642,7 @@ export default function ItemDetailPage() {
                               onClick={() => handleDecision(claim._id, 'APPROVED')}
                               disabled={deciding === claim._id}
                             >
-                              {deciding === claim._id ? 'Working…' : 'Approve'}
+                              {deciding === claim._id ? (<><span className="btn-spinner" aria-hidden="true" />Working…</>) : ('Approve')}
                             </button>
                             <button
                               type="button"

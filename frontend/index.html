@@ -25,6 +25,32 @@
     <title>Campus Lost &amp; Found</title>
   </head>
   <body>
+    <!--
+      THEME BOOTSTRAP — runs BEFORE React mounts and before first paint.
+
+      Without this the page renders with the light default, React then
+      mounts, reads localStorage and switches to dark: a visible white
+      flash on every load. This is deliberately a blocking inline script
+      (no defer, no module) so it executes before the browser paints.
+
+      Kept tiny and duplicated from ThemeContext on purpose — importing a
+      module here would defer it and reintroduce the flash.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('clf_theme');
+          if (stored === 'light' || stored === 'dark') {
+            document.documentElement.setAttribute('data-theme', stored);
+          }
+          // 'system' or unset: leave the attribute off so the
+          // prefers-color-scheme media query decides.
+        } catch (e) {
+          /* storage blocked - fall through to the OS preference */
+        }
+      })();
+    </script>
+
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

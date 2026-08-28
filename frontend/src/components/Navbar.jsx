@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 
 export default function Navbar() {
   const { isAuthenticated, user, logout } = useAuth();
@@ -96,6 +97,10 @@ export default function Navbar() {
           ))}
 
           <span className="nav-divider" aria-hidden="true" />
+
+          {/* Available signed in or out — a theme is a personal setting,
+              not a feature that should require an account. */}
+          <ThemeToggle />
 
           {isAuthenticated ? (
             <div className="nav-user">

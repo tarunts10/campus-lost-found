@@ -38,6 +38,20 @@
  *
  *   Restrict to users whose email matches the institution's domain:
  *     ... --slug example-college --match-domain --apply
+ *
+ *   Assign ONE specific account (the safest option, and the one to
+ *   prefer for a known development user):
+ *     ... --email you@gmail.com --slug vit-vellore --apply
+ *
+ * DOMAIN MISMATCH
+ *
+ * Registration requires the email domain to match the institution's, but
+ * that rule runs at sign-up only. A pre-existing account may have an
+ * address from anywhere — a development account on @gmail.com, say.
+ *
+ * Assigning such a user is refused unless --allow-domain-mismatch is
+ * passed, so the inconsistency is always a deliberate, recorded choice
+ * rather than something that happens quietly.
  */
 
 import mongoose from 'mongoose';
@@ -81,11 +95,48 @@ const main = async () => {
      */
     const collection = mongoose.connection.db.collection('users');
 
-    const orphans = await collection
-      .find({ $or: [{ institutionId: { $exists: false } }, { institutionId: null }] })
-      .toArray();
+    const missingInstitution = {
+      $or: [{ institutionId: { $exists: false } }, { institutionId: null }],
+    };
 
-    console.log(`\nUsers with no institution: ${orphans.length}`);
+    /**
+     * --email narrows the operation to ONE named account.
+     *
+     * This is the safest form of the migration and the one to prefer for
+     * a known development user: it cannot touch anybody else, even by
+     * accident, because the query itself is scoped to that address.
+     *
+     * The email is lowercased to match how the User schema stores it.
+     */
+    const targetEmail = args.values.email
+      ? String(args.values.email).trim().toLowerCase()
+      : null;
+
+    const query = targetEmail
+      ? { ...missingInstitution, email: targetEmail }
+      : missingInstitution;
+
+    const orphans = await collection.find(query).toArray();
+
+    if (targetEmail) {
+      console.log(`\nTargeting a single account: ${targetEmail}`);
+
+      if (orphans.length === 0) {
+        // Distinguish "already migrated" from "no such user" — they need
+        // very different responses from whoever is running this.
+        const existing = await collection.findOne({ email: targetEmail });
+
+        if (!existing) {
+          console.log('No user with that email exists.\n');
+        } else {
+          console.log('That user already has an institution. Nothing to do.\n');
+        }
+
+        return;
+      }
+    } else {
+      console.log(`\nUsers with no institution: ${orphans.length}`);
+    }
 
     if (orphans.length === 0) {
       console.log('Nothing to migrate.\n');
@@ -107,9 +158,11 @@ const main = async () => {
           '  1. Assign them explicitly:\n' +
           '       node --env-file=.env scripts/seed-institutions.js --list\n' +
           '       node --env-file=.env scripts/migrate-users-to-institution.js --slug <slug> --apply\n' +
-          '  2. Assign only those whose email already matches the domain:\n' +
+          '  2. Assign ONE named account (safest — cannot touch anyone else):\n' +
+          '       ... --email you@example.com --slug <slug> --apply\n' +
+          '  3. Assign only those whose email already matches the domain:\n' +
           '       ... --slug <slug> --match-domain --apply\n' +
-          '  3. Leave them. They are development accounts; simply register again.\n' +
+          '  4. Leave them. They are development accounts; simply register again.\n' +
           '     Nothing is deleted either way.\n'
       );
       return;
@@ -136,6 +189,33 @@ const main = async () => {
     console.log(`Would assign: ${targets.length} user(s)${skipped ? `, skipping ${skipped} whose email domain does not match` : ''}`);
 
     for (const user of targets) console.log(`  -> ${user.email}`);
+
+    /**
+     * DOMAIN MISMATCH GUARD.
+     *
+     * Registration enforces "your email domain must match the
+     * institution's", but only at sign-up. Assigning an existing account
+     * whose address does not match creates a user the registration rules
+     * would never have produced.
+     *
+     * That is sometimes exactly what is wanted (a development account on
+     * a personal address). It must still be stated out loud rather than
+     * happening quietly, so it is refused without an explicit flag.
+     */
+    const mismatched = targets.filter(
+      (user) => String(user.email).split('@').pop() !== institution.emailDomain
+    );
+
+    if (mismatched.length > 0 && !args.flags.has('allow-domain-mismatch')) {
+      console.log(
+        `\nREFUSED: ${mismatched.length} account(s) do not use @${institution.emailDomain}:\n` +
+          mismatched.map((u) => `  ${u.email}`).join('\n') +
+          '\n\nRegistration would never have allowed this pairing, so it is not done\n' +
+          'silently. If this is intentional (a development account on a personal\n' +
+          'address, for example), re-run with --allow-domain-mismatch.\n'
+      );
+      return;
+    }
 
     if (!args.flags.has('apply')) {
       console.log('\nDRY RUN — nothing was changed. Re-run with --apply to commit.\n');

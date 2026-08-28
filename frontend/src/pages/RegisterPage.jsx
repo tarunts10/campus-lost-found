@@ -326,7 +326,14 @@ export default function RegisterPage() {
               className="btn btn-primary btn-lg btn-block"
               disabled={submitting}
             >
-              {submitting ? 'Creating account…' : 'Create account'}
+              {submitting ? (
+                <>
+                  <span className="btn-spinner" aria-hidden="true" />
+                  Creating account…
+                </>
+              ) : (
+                'Create account'
+              )}
             </button>
           </form>
 

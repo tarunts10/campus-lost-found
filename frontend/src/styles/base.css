@@ -46,12 +46,12 @@ h2 { font-size: clamp(1.5rem, 3.5vw, var(--text-3xl)); }
 h3 { font-size: var(--text-xl); }
 
 a {
-  color: var(--brand-600);
+  color: var(--brand-text);
   text-decoration: none;
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-a:hover { color: var(--brand-700); }
+a:hover { color: var(--brand-action-hover); }
 
 /**
  * FOCUS VISIBILITY — accessibility, non-negotiable.
@@ -73,8 +73,8 @@ a:hover { color: var(--brand-700); }
   left: var(--space-4);
   z-index: 200;
   padding: var(--space-3) var(--space-4);
-  background: var(--brand-600);
-  color: var(--text-inverse);
+  background: var(--brand-action);
+  color: var(--brand-on-action);
   border-radius: var(--radius);
   font-weight: 600;
   transition: top var(--duration) var(--ease-out);
@@ -82,7 +82,7 @@ a:hover { color: var(--brand-700); }
 
 .skip-link:focus {
   top: var(--space-4);
-  color: var(--text-inverse);
+  color: var(--brand-on-action);
 }
 
 /* ------------------------------------------------------------------
@@ -186,14 +186,14 @@ a:hover { color: var(--brand-700); }
   width: 7px;
   height: 7px;
   margin: -3.5px 0 0 -3.5px;
-  background: var(--brand-600);
+  background: var(--brand-action);
 }
 
 .cursor-ring {
   width: 34px;
   height: 34px;
   margin: -17px 0 0 -17px;
-  border: 1.5px solid var(--brand-400);
+  border: 1.5px solid var(--brand-action-hover);
   transition:
     width var(--duration) var(--ease-spring),
     height var(--duration) var(--ease-spring),
@@ -208,8 +208,8 @@ a:hover { color: var(--brand-700); }
   width: 52px;
   height: 52px;
   margin: -26px 0 0 -26px;
-  background: rgba(99, 102, 241, 0.12);
-  border-color: var(--brand-500);
+  background: var(--brand-tint);
+  border-color: var(--brand-action);
 }
 
 /* ------------------------------------------------------------------
@@ -230,8 +230,8 @@ a:hover { color: var(--brand-700); }
   width: 46px;
   height: 46px;
   border-radius: var(--radius);
-  border: 3px solid var(--brand-100);
-  border-top-color: var(--brand-600);
+  border: 3px solid var(--brand-tint-border);
+  border-top-color: var(--brand-action);
   animation: spin 700ms linear infinite;
 }
 
@@ -264,9 +264,9 @@ a:hover { color: var(--brand-700); }
 .skeleton {
   background: linear-gradient(
     90deg,
-    var(--bg-muted) 25%,
-    var(--bg-subtle) 50%,
-    var(--bg-muted) 75%
+    var(--skeleton-from) 25%,
+    var(--skeleton-to) 50%,
+    var(--skeleton-from) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
@@ -291,7 +291,7 @@ a:hover { color: var(--brand-700); }
   height: 3px;
   width: 100%;
   z-index: 250;
-  background: linear-gradient(90deg, var(--brand-400), var(--brand-600));
+  background: linear-gradient(90deg, var(--brand-action-hover), var(--brand-action));
   transform-origin: left;
   animation: route-bar 600ms var(--ease-out) forwards;
 }
