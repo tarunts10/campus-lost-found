@@ -8,6 +8,7 @@
  */
 
 import User from '../models/User.js';
+import Institution from '../models/Institution.js';
 import { signToken } from '../utils/jwt.js';
 import bcrypt from 'bcrypt';
 
@@ -30,19 +31,96 @@ const DUMMY_HASH =
  * that decides what the CLIENT sees, and stating it here means a future
  * field added to the schema is not exposed by accident.
  */
-const toPublicUser = (user) => ({
-  _id: user._id,
-  name: user.name,
-  email: user.email,
-  role: user.role,
-  createdAt: user.createdAt,
-});
+const toPublicUser = (user, institution = null) => {
+  /**
+   * institutionId may arrive in one of two shapes:
+   *   - POPULATED into a full document (authMiddleware does this, so
+   *     /api/auth/me can return institution details)
+   *   - a bare ObjectId (right after User.create, before any populate)
+   *
+   * Handling both means callers do not have to remember which they hold.
+   */
+  const source =
+    institution ||
+    (user.institutionId && typeof user.institutionId === 'object' && user.institutionId.name
+      ? user.institutionId
+      : null);
+
+  return {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    createdAt: user.createdAt,
+
+    /**
+     * Only the three fields the client legitimately needs to display.
+     * isActive and timestamps stay server-side.
+     */
+    institution: source
+      ? { _id: source._id, name: source.name, slug: source.slug }
+      : null,
+  };
+};
 
 /**
  * POST /api/auth/register
  */
 export const register = async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, institutionId } = req.body;
+
+  /**
+   * ================= INSTITUTION VERIFICATION =================
+   *
+   * The client TELLS us which institution it wants. We verify that claim
+   * against the database and against the email address before believing
+   * any part of it. Three separate checks:
+   *
+   *   1. the institution exists
+   *   2. it is currently accepting registrations
+   *   3. the email actually belongs to that institution's domain
+   *
+   * Check 3 is what makes the whole tenancy model meaningful. Without it,
+   * anyone could pick any college from the dropdown and land inside its
+   * private data. With it, joining a college requires an address at that
+   * college.
+   */
+  const institution = await Institution.findById(institutionId);
+
+  if (!institution) {
+    const error = new Error('Selected institution does not exist');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (!institution.isActive) {
+    const error = new Error(
+      `${institution.name} is not currently accepting new registrations`
+    );
+    error.statusCode = 403;
+    throw error;
+  }
+
+  /**
+   * Domain check.
+   *
+   * Zod already lowercased and trimmed the email, and emailDomain is
+   * stored lowercase, so this is a plain comparison.
+   *
+   * Comparing the segment after the LAST "@" — rather than using
+   * endsWith on the whole string — matters: endsWith('college.edu')
+   * would also accept "attacker@evilcollege.edu" and
+   * "attacker@college.edu.evil.com" is caught for the same reason.
+   */
+  const emailDomain = email.split('@').pop();
+
+  if (emailDomain !== institution.emailDomain) {
+    const error = new Error(
+      `Registration for ${institution.name} requires an @${institution.emailDomain} email address`
+    );
+    error.statusCode = 400;
+    throw error;
+  }
 
   /**
    * Check for an existing account first, so the common case returns a
@@ -77,11 +155,27 @@ export const register = async (req, res) => {
    * The plaintext password is passed here, but never reaches MongoDB —
    * the pre('save') hook in the User model hashes it first.
    */
-  const user = await User.create({ name, email, password });
+  const user = await User.create({
+    name,
+    email,
+    password,
+
+    /**
+     * institutionId is set from the VERIFIED institution document we
+     * just loaded, not from the raw request body. Functionally the same
+     * value here, but it means the field can only ever be written after
+     * the three checks above have passed.
+     *
+     * This is the only place in the entire API that writes this field.
+     * No endpoint updates it afterwards, so a user cannot move between
+     * institutions.
+     */
+    institutionId: institution._id,
+  });
 
   res.status(201).json({
     success: true,
-    data: { user: toPublicUser(user) },
+    data: { user: toPublicUser(user, institution) },
   });
 };
 
@@ -99,7 +193,9 @@ export const login = async (req, res) => {
    * needs the hash, so it opts in explicitly. Without the +password,
    * user.password would be undefined and every login would fail.
    */
-  const user = await User.findOne({ email }).select('+password');
+  const user = await User.findOne({ email })
+    .select('+password')
+    .populate('institutionId', 'name slug');
 
   /**
    * SECURITY — one identical error for both failure modes.

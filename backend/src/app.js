@@ -25,6 +25,8 @@ import cors from 'cors';
 import itemRoutes from './routes/itemRoutes.js';
 import claimRoutes from './routes/claimRoutes.js';
 import authRoutes from './routes/authRoutes.js';
+import institutionRoutes from './routes/institutionRoutes.js';
+import uploadRoutes from './routes/uploadRoutes.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -135,9 +137,22 @@ app.get('/api/health', (req, res) => {
  * Authentication is mounted first purely for readability — it is the
  * entry point of the application from a user's perspective.
  */
+/**
+ * Institutions are mounted BEFORE auth because they are needed first:
+ * the sign-up form must list colleges before anyone has an account.
+ * This is the only unauthenticated data route in the API.
+ */
+app.use('/api/institutions', institutionRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/items', itemRoutes);
 app.use('/api/claims', claimRoutes);
+
+/**
+ * Uploads are mounted separately from items because an image is uploaded
+ * BEFORE the item exists — the client uploads first, then submits the
+ * returned metadata with the item.
+ */
+app.use('/api/uploads', uploadRoutes);
 
 /**
  * notFound — reached only if no route above matched.

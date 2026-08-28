@@ -7,9 +7,16 @@
 
 import apiClient from './apiClient.js';
 
-// POST /api/auth/register -> 201 { success, data: { user } }
-export const register = async ({ name, email, password }) => {
+/**
+ * POST /api/auth/register -> 201 { success, data: { user } }
+ *
+ * institutionId is REQUIRED by the backend. It is a request, not a
+ * decision: the server verifies the institution exists, is active, and
+ * that the email matches its configured domain before accepting it.
+ */
+export const register = async ({ institutionId, name, email, password }) => {
   const { data } = await apiClient.post('/auth/register', {
+    institutionId,
     name,
     email,
     password,

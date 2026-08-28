@@ -34,7 +34,22 @@ const emailSchema = z
   .toLowerCase()
   .pipe(z.email({ message: 'Must be a valid email address' }));
 
+/**
+ * A 24-character hex string — the shape of a MongoDB ObjectId.
+ *
+ * Validating the FORMAT here is not the same as validating the VALUE.
+ * The register controller separately checks that the institution exists,
+ * is active, and matches the email domain. This only catches malformed
+ * input early, so the controller never queries with obvious rubbish.
+ */
+const objectIdSchema = z
+  .string({ message: 'Institution is required' })
+  .trim()
+  .regex(/^[0-9a-fA-F]{24}$/, 'Select a valid institution');
+
 export const registerSchema = z.object({
+  institutionId: objectIdSchema,
+
   name: z
     .string({ message: 'Name is required' })
     .trim()

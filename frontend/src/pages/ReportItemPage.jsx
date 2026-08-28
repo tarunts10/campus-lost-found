@@ -22,6 +22,7 @@ import {
   ITEM_CATEGORIES,
 } from '../utils/constants.js';
 import { todayInputValue } from '../utils/format.js';
+import ImageUploader from '../components/ImageUploader.jsx';
 
 const EMPTY_FORM = {
   title: '',
@@ -30,6 +31,7 @@ const EMPTY_FORM = {
   type: '',
   location: '',
   date: todayInputValue(),
+  images: [],
 };
 
 export default function ReportItemPage() {
@@ -91,6 +93,13 @@ export default function ReportItemPage() {
         type: form.type,
         location: form.location.trim(),
         date: form.date,
+
+        /**
+         * Image metadata returned by our own upload endpoint. The backend
+         * re-verifies with ImageKit that this user uploaded each fileId,
+         * so these values are a reference, not a trusted assertion.
+         */
+        images: form.images,
       });
 
       // Straight to the new item, so the reporter can see the result and
@@ -258,6 +267,12 @@ export default function ReportItemPage() {
               {errors.date && <p className="field-error">{errors.date}</p>}
             </div>
           </div>
+
+          <ImageUploader
+            images={form.images}
+            onChange={(images) => setForm((current) => ({ ...current, images }))}
+            disabled={submitting}
+          />
 
           <div className="row">
             <button type="submit" className="btn btn-primary btn-lg" disabled={submitting}>

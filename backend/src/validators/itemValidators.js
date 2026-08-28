@@ -78,6 +78,27 @@ export const createItemSchema = z.object({
     .max(200, 'Location cannot exceed 200 characters'),
 
   date: itemDateSchema,
+
+  /**
+   * images — metadata returned by POST /api/uploads/image.
+   *
+   * The client echoes back what our own upload endpoint gave it. These
+   * values are NOT trusted on that basis: the item controller
+   * independently asks ImageKit whether this user uploaded each fileId,
+   * so a client cannot attach a file belonging to somebody else.
+   *
+   * Optional, because plenty of reports have no photo.
+   */
+  images: z
+    .array(
+      z.object({
+        url: z.string().trim().min(1, 'Image url is required'),
+        fileId: z.string().trim().min(1, 'Image fileId is required'),
+        name: z.string().trim().min(1).max(255),
+      })
+    )
+    .max(5, 'An item can have at most 5 images')
+    .optional(),
 });
 
 /**

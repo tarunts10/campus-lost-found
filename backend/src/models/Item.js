@@ -169,6 +169,61 @@ const itemSchema = new mongoose.Schema(
       ref: 'User',
       required: [true, 'reportedBy is required'],
     },
+
+    /**
+     * institutionId — which college this item belongs to.
+     *
+     * THE ISOLATION KEY. Every read of this collection is filtered by it,
+     * so a member of one college can never see another college's items.
+     *
+     * SECURITY: always copied from req.user.institutionId at creation
+     * time, never read from the request body. It is deliberately NOT in
+     * the updatable field list, so it can never change after creation —
+     * an item cannot be moved between institutions through the API.
+     *
+     * Denormalised onto the item (rather than being looked up through
+     * reportedBy on every query) because it is used in the filter of
+     * EVERY item query. Following the reference each time would mean a
+     * second round trip per request, or an aggregation pipeline, for a
+     * value that can never change once set.
+     */
+    institutionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Institution',
+      required: [true, 'institutionId is required'],
+      index: true,
+    },
+
+    /**
+     * images — metadata for photos stored in ImageKit.
+     *
+     * The image BYTES live in ImageKit, not here. MongoDB stores only
+     * the pointer: where the file is, its ImageKit id, and its original
+     * name. Storing binaries in MongoDB would bloat every document,
+     * blow through the 16MB document cap, and make every list query slow.
+     *
+     *   url    — the public CDN URL the browser loads
+     *   fileId — ImageKit's identifier, needed to DELETE the file later
+     *   name   — the original filename, used as alt-text fallback
+     *
+     * _id: false because these are plain value objects, not documents
+     * that need their own identity.
+     */
+    images: {
+      type: [
+        {
+          _id: false,
+          url: { type: String, required: true, trim: true },
+          fileId: { type: String, required: true, trim: true },
+          name: { type: String, required: true, trim: true, maxlength: 255 },
+        },
+      ],
+      default: [],
+      validate: {
+        validator: (value) => value.length <= 5,
+        message: 'An item can have at most 5 images',
+      },
+    },
   },
   {
     /**

@@ -38,6 +38,123 @@ import Item, {
 const PUBLIC_USER_FIELDS = 'name role';
 
 /**
+ * Get a plain institution id from req.user.
+ *
+ * authMiddleware POPULATES institutionId into a full document, so
+ * req.user.institutionId is an object, not an ObjectId. Every isolation
+ * filter needs the raw id. Normalising it in one helper means no
+ * controller has to remember which shape it is holding — and a filter
+ * built from the wrong shape would silently match nothing, which is the
+ * kind of bug that looks like "the page is empty" rather than an error.
+ */
+const institutionIdOf = (user) =>
+  user.institutionId?._id ? user.institutionId._id : user.institutionId;
+
+/**
+ * Verify that every image the client is attaching was uploaded BY THIS USER.
+ *
+ * THE PROBLEM: POST /api/items accepts image metadata in the body. Without
+ * a check, anyone could attach an arbitrary ImageKit fileId — including
+ * one belonging to another user's private item — and have our API serve
+ * it under their own report.
+ *
+ * THE APPROACH: every upload is tagged `uploader_<userId>` by the upload
+ * controller. Here we ask ImageKit for each file's real tags and confirm
+ * this user's tag is present. ImageKit is the source of truth, so a
+ * forged fileId fails even though the client "returned" it to us.
+ *
+ * THE COST, stated plainly: one ImageKit API call per image, so up to
+ * five extra round trips on item creation. Acceptable for an action a
+ * user performs occasionally. A cheaper alternative would be a local
+ * table of issued uploads, but that adds a collection and a cleanup job
+ * for a check ImageKit can already answer authoritatively.
+ *
+ * The `url` is taken from ImageKit's response, not from the client, so a
+ * client cannot pair a legitimate fileId with a URL pointing elsewhere.
+ */
+const verifyImageOwnership = async (images, user) => {
+  if (!images || images.length === 0) return [];
+
+  const { getImageKit, uploaderTag } = await import('../config/imagekit.js');
+  const imagekit = getImageKit();
+  const expectedTag = uploaderTag(user._id);
+
+  const verified = [];
+
+  for (const image of images) {
+    let details;
+
+    try {
+      details = await imagekit.getFileDetails(image.fileId);
+    } catch {
+      const error = new Error(
+        `Image "${image.name}" could not be verified. Upload it again.`
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (!Array.isArray(details.tags) || !details.tags.includes(expectedTag)) {
+      const error = new Error(
+        `Image "${image.name}" was not uploaded by you and cannot be attached.`
+      );
+      error.statusCode = 403;
+      throw error;
+    }
+
+    // Trust ImageKit's url and fileId, not the client's copy of them.
+    verified.push({
+      url: details.url,
+      fileId: details.fileId,
+      name: String(image.name).slice(0, 255),
+    });
+  }
+
+  return verified;
+};
+
+/**
+ * Best-effort removal of files from ImageKit.
+ *
+ * DELIBERATELY NON-FATAL. If ImageKit is unreachable, deleting an item
+ * must still succeed: refusing to delete a user's own report because a
+ * third-party CDN is down would be the wrong trade. The cost of failure
+ * is an orphaned file in the media library, which is recoverable; the
+ * cost of the alternative is an operation the user cannot complete.
+ *
+ * Failures are logged so orphans can be reconciled later.
+ */
+const deleteImagesFromImageKit = async (images) => {
+  if (!images || images.length === 0) return { deleted: 0, failed: 0 };
+
+  let deleted = 0;
+  let failed = 0;
+
+  try {
+    const { getImageKit } = await import('../config/imagekit.js');
+    const imagekit = getImageKit();
+
+    for (const image of images) {
+      try {
+        await imagekit.deleteFile(image.fileId);
+        deleted += 1;
+      } catch (error) {
+        failed += 1;
+        console.warn(
+          `ImageKit cleanup failed for fileId ${image.fileId}: ${error.message}`
+        );
+      }
+    }
+  } catch (error) {
+    // ImageKit not configured at all — nothing to clean up.
+    failed = images.length;
+    console.warn(`ImageKit cleanup skipped: ${error.message}`);
+  }
+
+  return { deleted, failed };
+};
+
+/**
  * Ownership check: may this user modify this item?
  *
  * Two ways to qualify — you reported it, or you are an ADMIN.
@@ -51,8 +168,27 @@ const PUBLIC_USER_FIELDS = 'name role';
  * === compares references, not values. Two ObjectIds holding the same id
  * are not === each other. Comparing their string forms is correct.
  */
-const canModifyItem = (item, user) =>
-  item.reportedBy.toString() === user._id.toString() || user.role === 'ADMIN';
+const canModifyItem = (item, user) => {
+  /**
+   * INSTITUTION FIRST, and it is absolute.
+   *
+   * An ADMIN of one college has no authority over another college's
+   * items. Checking role before institution would let a compromised or
+   * careless admin account reach across the tenancy boundary — the one
+   * thing this milestone exists to prevent.
+   *
+   * In practice a cross-institution item is never even loaded (the
+   * lookups below filter by institution), so this is defence in depth.
+   */
+  if (String(item.institutionId) !== String(institutionIdOf(user))) {
+    return false;
+  }
+
+  const isOwner = String(item.reportedBy) === String(user._id);
+  const isAdmin = user.role === 'ADMIN';
+
+  return isOwner || isAdmin;
+};
 
 /**
  * Fields a client is allowed to change on an existing item.
@@ -63,6 +199,7 @@ const canModifyItem = (item, user) =>
  *   _id, createdAt, updatedAt — managed by MongoDB and Mongoose
  */
 const UPDATABLE_ITEM_FIELDS = [
+  'images',
   'title',
   'description',
   'category',
@@ -216,7 +353,10 @@ export const createItem = async (req, res) => {
    * Listing the allowed fields by hand means anything else the client
    * sends is ignored. Whitelist, never blacklist.
    */
-  const { title, description, category, type, location, date } = req.body;
+  const { title, description, category, type, location, date, images } =
+    req.body;
+
+  const verifiedImages = await verifyImageOwnership(images, req.user);
 
   const item = await Item.create({
     title,
@@ -238,6 +378,18 @@ export const createItem = async (req, res) => {
      * because the forged field was never destructured above.
      */
     reportedBy: req.user._id,
+
+    /**
+     * institutionId comes from the AUTHENTICATED user, never the body.
+     *
+     * A client sending {"institutionId": "<another college>"} has that
+     * value stripped by Zod during validation and ignored here anyway.
+     * This line is the only way the field is ever written.
+     */
+    institutionId: institutionIdOf(req.user),
+
+    // Each fileId was verified against ImageKit above.
+    images: verifiedImages,
   });
 
   /**
@@ -274,7 +426,18 @@ export const getItems = async (req, res) => {
    * An empty filter object {} means "match everything" — which is exactly
    * what we want when no query parameters are supplied.
    */
-  const filter = {};
+  /**
+   * ============== INSTITUTION ISOLATION — THE LIST ==============
+   *
+   * The filter STARTS scoped to the caller's own institution. Every
+   * other filter below only narrows it further; nothing can widen it.
+   *
+   * Note that institutionId is NOT in ALLOWED_QUERY_PARAMS, so a request
+   * like ?institutionId=OTHER is rejected with a 400 rather than being
+   * silently ignored. Even if it were accepted, this assignment happens
+   * first and the query-param loop never writes this key.
+   */
+  const filter = { institutionId: institutionIdOf(req.user) };
 
   /**
    * Reject unrecognised query parameters instead of ignoring them.
@@ -472,7 +635,22 @@ export const getItemById = async (req, res) => {
     throw error;
   }
 
-  const item = await Item.findById(id).populate(
+  /**
+   * INSTITUTION ISOLATION — SINGLE ITEM.
+   *
+   * findOne with BOTH conditions, not findById followed by a check.
+   * The database never returns another college's document, so there is
+   * no window in which it exists in memory and could be leaked by a
+   * later mistake.
+   *
+   * A cross-institution id therefore produces the SAME 404 as an id that
+   * does not exist at all. That is deliberate: a 403 would confirm the
+   * item is real, letting someone probe for what another college holds.
+   */
+  const item = await Item.findOne({
+    _id: id,
+    institutionId: institutionIdOf(req.user),
+  }).populate(
     'reportedBy',
     PUBLIC_USER_FIELDS
   );
@@ -509,7 +687,11 @@ const loadItemForModification = async (id, user) => {
     throw error;
   }
 
-  const item = await Item.findById(id);
+  // Scoped to the institution for the same reason as the read above.
+  const item = await Item.findOne({
+    _id: id,
+    institutionId: institutionIdOf(user),
+  });
 
   if (!item) {
     const error = new Error('Item not found');
@@ -566,9 +748,27 @@ export const updateItem = async (req, res) => {
    */
   const applied = [];
 
+  /**
+   * Remember the images the item had BEFORE the update, so any that the
+   * user removed can be cleaned out of ImageKit afterwards.
+   */
+  const previousImages = (item.images || []).map((image) => ({
+    fileId: image.fileId,
+    name: image.name,
+  }));
+
   for (const field of UPDATABLE_ITEM_FIELDS) {
     if (req.body[field] !== undefined) {
-      item[field] = req.body[field];
+      /**
+       * Images get the same ownership verification as on create: you may
+       * only attach files that YOU uploaded, even when editing your own
+       * item.
+       */
+      item[field] =
+        field === 'images'
+          ? await verifyImageOwnership(req.body.images, req.user)
+          : req.body[field];
+
       applied.push(field);
     }
   }
@@ -590,6 +790,29 @@ export const updateItem = async (req, res) => {
    * with runValidators: true, which is a very easy thing to forget.
    */
   await item.save();
+
+  /**
+   * Clean up images the user removed in this edit.
+   *
+   * Done AFTER the save succeeds — deleting the file first and then
+   * failing to save would leave the item pointing at a file that no
+   * longer exists. Best-effort, and never allowed to fail the request.
+   */
+  if (applied.includes('images')) {
+    const keptFileIds = new Set(item.images.map((image) => image.fileId));
+    const removed = previousImages.filter(
+      (image) => !keptFileIds.has(image.fileId)
+    );
+
+    if (removed.length > 0) {
+      const cleanup = await deleteImagesFromImageKit(removed);
+      console.log(
+        `Item ${item._id} update: removed ${removed.length} image(s), ` +
+          `${cleanup.deleted} deleted from ImageKit, ${cleanup.failed} failed.`
+      );
+    }
+  }
+
   await item.populate('reportedBy', PUBLIC_USER_FIELDS);
 
   res.status(200).json({
@@ -605,7 +828,26 @@ export const updateItem = async (req, res) => {
 export const deleteItem = async (req, res) => {
   const item = await loadItemForModification(req.params.id, req.user);
 
+  // Capture the image list before the document is gone.
+  const images = (item.images || []).map((image) => ({
+    fileId: image.fileId,
+    name: image.name,
+  }));
+
   await item.deleteOne();
+
+  /**
+   * Remove the images from ImageKit AFTER the item is deleted.
+   *
+   * This order matters. Deleting files first and then failing to delete
+   * the item would leave an item whose images 404 — visibly broken.
+   * This way the worst case is an orphaned file nobody can see, which is
+   * invisible to users and cleanable later.
+   *
+   * The result is reported so the caller knows what happened, but a
+   * cleanup failure never fails the deletion.
+   */
+  const cleanup = await deleteImagesFromImageKit(images);
 
   /**
    * 200 with a confirmation body rather than 204 No Content.
@@ -617,6 +859,11 @@ export const deleteItem = async (req, res) => {
    */
   res.status(200).json({
     success: true,
-    data: { _id: item._id, message: 'Item deleted' },
+    data: {
+      _id: item._id,
+      message: 'Item deleted',
+      imagesDeleted: cleanup.deleted,
+      imagesFailed: cleanup.failed,
+    },
   });
 };

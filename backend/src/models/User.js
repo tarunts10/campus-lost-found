@@ -86,6 +86,31 @@ const userSchema = new mongoose.Schema(
      * is ignored and gets STUDENT like everyone else. Promotion to ADMIN
      * is a deliberate action taken outside the public API.
      */
+    /**
+     * institutionId — the college this user belongs to.
+     *
+     * This single field is what every isolation rule in the application
+     * is built on. Controllers read it from req.user (loaded from the
+     * database via a verified JWT) and use it to scope every query.
+     *
+     * SECURITY: it is set ONCE, during registration, after the backend
+     * has verified that the institution exists, is active, and that the
+     * user's email matches its domain. Nothing in the API accepts a
+     * change to it afterwards — there is no endpoint that writes this
+     * field again. Moving a user between institutions is a deliberate
+     * administrative action outside the public API.
+     *
+     * required: true means a user CANNOT exist without an institution.
+     * See scripts/migrate-users-to-institution.js for how the pre-existing
+     * development accounts were handled.
+     */
+    institutionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Institution',
+      required: [true, 'Institution is required'],
+      index: true,
+    },
+
     role: {
       type: String,
       enum: {

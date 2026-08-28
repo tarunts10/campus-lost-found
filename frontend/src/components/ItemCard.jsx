@@ -40,6 +40,20 @@ export default function ItemCard({ item, index = 0 }) {
         className="card card-hover tilt item-card"
         aria-label={`${item.type === 'LOST' ? 'Lost' : 'Found'} item: ${item.title}`}
       >
+        {/*
+          Thumbnail, when the report has photos. Falls back to the
+          category emoji layout below when it does not, so cards without
+          images do not leave an empty grey box.
+        */}
+        {item.images?.length > 0 && (
+          <div className="item-card-thumb">
+            <img src={item.images[0].url} alt={item.images[0].name} loading="lazy" />
+            {item.images.length > 1 && (
+              <span className="item-card-thumb-count">+{item.images.length - 1}</span>
+            )}
+          </div>
+        )}
+
         <div className="item-card-top">
           <div className="row" style={{ gap: 'var(--space-2)' }}>
             <span aria-hidden="true" style={{ fontSize: '1.25rem' }}>

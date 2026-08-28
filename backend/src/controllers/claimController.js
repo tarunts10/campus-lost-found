@@ -45,6 +45,17 @@ const assertValidObjectId = (id, label) => {
 const sameId = (a, b) => String(a) === String(b);
 
 /**
+ * Institution id from req.user, normalised.
+ *
+ * authMiddleware populates institutionId into a full document, so this
+ * unwraps it. Same helper as in itemController; duplicated rather than
+ * shared because a two-line function in its own module would be more
+ * indirection than it saves.
+ */
+const institutionIdOf = (user) =>
+  user.institutionId?._id ? user.institutionId._id : user.institutionId;
+
+/**
  * POST /api/items/:id/claims
  * File a claim against an item.
  */
@@ -58,7 +69,18 @@ export const createClaim = async (req, res) => {
    * Load the item. We need it for three separate checks, and it is also
    * how we discover the owner — the owner is NEVER taken from the body.
    */
-  const item = await Item.findById(itemId);
+  /**
+   * INSTITUTION ISOLATION.
+   *
+   * Scoped in the QUERY, so an item from another college is never even
+   * loaded. A cross-institution id therefore returns the same 404 as a
+   * non-existent one — a 403 would confirm the item is real and let
+   * someone probe another college's data.
+   */
+  const item = await Item.findOne({
+    _id: itemId,
+    institutionId: institutionIdOf(req.user),
+  });
 
   if (!item) {
     throw httpError(404, 'Item not found');
@@ -180,10 +202,24 @@ export const getClaims = async (req, res) => {
    * where a person reports a handful of items; it would need an
    * aggregation pipeline with $lookup if someone owned thousands.
    */
+  /**
+   * INSTITUTION ISOLATION — applies to EVERYONE, admins included.
+   *
+   * Claims do not carry an institutionId of their own, so the boundary
+   * is enforced by restricting which ITEMS a claim may reference. Every
+   * branch below intersects with this list.
+   */
+  const institutionItemIds = await Item.find({
+    institutionId: institutionIdOf(req.user),
+  }).distinct('_id');
+
+  filter.item = { $in: institutionItemIds };
+
   if (req.user.role !== 'ADMIN') {
-    const ownedItemIds = await Item.find({ reportedBy: req.user._id }).distinct(
-      '_id'
-    );
+    const ownedItemIds = await Item.find({
+      reportedBy: req.user._id,
+      institutionId: institutionIdOf(req.user),
+    }).distinct('_id');
 
     filter.$or = [{ claimant: req.user._id }, { item: { $in: ownedItemIds } }];
   }
@@ -211,7 +247,24 @@ export const getClaims = async (req, res) => {
     }
 
     assertValidObjectId(req.query.item, 'item');
-    filter.item = req.query.item;
+
+    /**
+     * SECURITY: this assignment REPLACES the institution scoping set
+     * above, so the requested item must first be confirmed to be inside
+     * the caller's own institution. Without this check,
+     * ?item=<other college's item id> would have silently widened the
+     * query past the isolation boundary.
+     *
+     * A disallowed id yields an empty result rather than an error, so a
+     * caller cannot use this endpoint to discover whether an item id
+     * exists in another institution.
+     */
+    const requestedItemId = String(req.query.item);
+    const withinInstitution = institutionItemIds.some(
+      (id) => String(id) === requestedItemId
+    );
+
+    filter.item = withinInstitution ? req.query.item : { $in: [] };
   }
 
   const page = parsePositiveInt(req.query.page, 'page', DEFAULT_PAGE);
@@ -306,11 +359,36 @@ export const updateClaim = async (req, res) => {
    * RULE 10 — ownership is read from the DATABASE, never from the body.
    * A client cannot tell us who owns an item.
    */
-  const item = await Item.findById(claim.item);
+  /**
+   * Load the item scoped to the caller's institution.
+   *
+   * This is what stops an admin of College A deciding a claim on College
+   * B's item: the item simply is not found for them, so the claim is
+   * undecidable rather than merely forbidden.
+   */
+  const item = await Item.findOne({
+    _id: claim.item,
+    institutionId: institutionIdOf(req.user),
+  });
 
   if (!item) {
-    // The claimed item was deleted. The claim is orphaned and undecidable.
-    throw httpError(404, 'The item this claim refers to no longer exists');
+    /**
+     * Reached in two situations that must be INDISTINGUISHABLE:
+     *
+     *   a) the item genuinely no longer exists (orphaned claim)
+     *   b) the item belongs to a DIFFERENT institution
+     *
+     * Claim.findById above is not institution-scoped — a claim id is not
+     * secret, and scoping it would need a join. So the isolation is
+     * enforced here instead, by the item lookup.
+     *
+     * The message must therefore be identical to the "no such claim"
+     * error above. A distinct message like "the item no longer exists"
+     * would confirm that a probed claim id is REAL in another
+     * institution, which is exactly the information this boundary is
+     * supposed to withhold.
+     */
+    throw httpError(404, 'Claim not found');
   }
 
   /**

@@ -74,11 +74,41 @@ export const protect = async (req, res, next) => {
    * The password is NOT loaded: the schema marks it select: false, and
    * nothing here asks for it.
    */
-  const user = await User.findById(payload.sub);
+  /**
+   * The institution is POPULATED here, once, for every authenticated
+   * request. Two reasons:
+   *
+   *   1. /api/auth/me can return the institution's name and slug without
+   *      a second query.
+   *   2. The upload controller uses the slug to choose an ImageKit folder.
+   *
+   * Controllers that only need the id use req.user.institutionId._id.
+   * The helper `institutionIdOf()` in the item controller normalises
+   * that, so no controller has to care whether it was populated.
+   */
+  const user = await User.findById(payload.sub).populate(
+    'institutionId',
+    'name slug isActive'
+  );
 
   if (!user) {
     // Signature was valid, but the account is gone.
     return next(unauthorized('Not authorised. User no longer exists.'));
+  }
+
+  /**
+   * A user with no institution cannot be authorised for anything.
+   *
+   * This should be impossible — the field is required on the schema —
+   * but it is worth failing closed rather than letting a malformed
+   * account through with an undefined institution, which would make
+   * every isolation filter compare against undefined.
+   */
+  if (!user.institutionId) {
+    console.warn(`User ${user._id} has no institution; refusing the request.`);
+    return next(
+      unauthorized('Your account is not linked to an institution. Contact an administrator.')
+    );
   }
 
   /**

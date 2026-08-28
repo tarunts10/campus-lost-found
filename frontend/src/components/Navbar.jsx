@@ -103,7 +103,13 @@ export default function Navbar() {
                 <span className="nav-avatar" aria-hidden="true">
                   {user?.name?.charAt(0).toUpperCase()}
                 </span>
-                {user?.name}
+                <span className="nav-user-text">
+                  {user?.name}
+                  {/* Institution shown so it is always obvious whose data you are looking at. */}
+                  {user?.institution?.name && (
+                    <small className="nav-institution">{user.institution.name}</small>
+                  )}
+                </span>
                 {user?.role === 'ADMIN' && (
                   <span className="badge badge-active">Admin</span>
                 )}

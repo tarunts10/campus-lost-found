@@ -23,6 +23,7 @@ import Badge from '../components/Badge.jsx';
 import { SectionLoader } from '../components/Loader.jsx';
 import { EmptyState, ErrorState } from '../components/StateBlock.jsx';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
+import ImageUploader from '../components/ImageUploader.jsx';
 import {
   CATEGORY_ICONS,
   CATEGORY_LABELS,
@@ -44,6 +45,7 @@ export default function ItemDetailPage() {
   const { user } = useAuth();
 
   const [item, setItem] = useState(null);
+  const [activeImage, setActiveImage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -94,6 +96,7 @@ export default function ItemDetailPage() {
         type: data.type,
         location: data.location,
         date: toDateInputValue(data.date),
+        images: data.images || [],
       });
     } catch (err) {
       setError(err.message);
@@ -373,6 +376,14 @@ export default function ItemDetailPage() {
                   </div>
                 </div>
 
+                <ImageUploader
+                  images={editForm.images || []}
+                  onChange={(images) =>
+                    setEditForm((current) => ({ ...current, images }))
+                  }
+                  disabled={saving}
+                />
+
                 <div className="row">
                   <button type="submit" className="btn btn-primary" disabled={saving}>
                     {saving ? 'Saving…' : 'Save changes'}
@@ -392,6 +403,35 @@ export default function ItemDetailPage() {
               </form>
             ) : (
               <>
+                {/* Photo gallery. Rendered only when the report has images. */}
+                {item.images?.length > 0 && (
+                  <div className="detail-gallery">
+                    <figure className="detail-gallery-main">
+                      <img
+                        src={item.images[activeImage]?.url}
+                        alt={item.images[activeImage]?.name || item.title}
+                      />
+                    </figure>
+
+                    {item.images.length > 1 && (
+                      <div className="detail-gallery-thumbs">
+                        {item.images.map((image, index) => (
+                          <button
+                            key={image.fileId}
+                            type="button"
+                            className={`detail-thumb${index === activeImage ? ' is-active' : ''}`}
+                            onClick={() => setActiveImage(index)}
+                            aria-label={`Show image ${index + 1} of ${item.images.length}`}
+                            aria-current={index === activeImage}
+                          >
+                            <img src={image.url} alt="" loading="lazy" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="row" style={{ justifyContent: 'space-between' }}>
                   <div className="row">
                     <span aria-hidden="true" style={{ fontSize: '1.75rem' }}>
