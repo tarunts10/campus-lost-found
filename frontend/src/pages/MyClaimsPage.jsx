@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import * as claimService from '../services/claimService.js';
 import Badge from '../components/Badge.jsx';
 import Pagination from '../components/Pagination.jsx';
@@ -30,6 +31,7 @@ export default function MyClaimsPage() {
   useDocumentTitle('My claims');
 
   const { user } = useAuth();
+  const toast = useToast();
 
   const [claims, setClaims] = useState([]);
   const [pagination, setPagination] = useState(null);
@@ -38,7 +40,6 @@ export default function MyClaimsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionError, setActionError] = useState('');
-  const [notice, setNotice] = useState('');
   const [deciding, setDeciding] = useState(null);
 
   const load = useCallback(async () => {
@@ -81,12 +82,11 @@ export default function MyClaimsPage() {
   const handleDecision = async (claimId, status) => {
     setDeciding(claimId);
     setActionError('');
-    setNotice('');
 
     try {
       const result = await claimService.decideClaim(claimId, status);
 
-      setNotice(
+      toast.success(
         status === 'APPROVED'
           ? `Claim approved. The item is now ${result.itemStatus}` +
               (result.otherClaimsRejected > 0
@@ -189,12 +189,6 @@ export default function MyClaimsPage() {
             you reported.
           </p>
         </header>
-
-        {notice && (
-          <div className="alert alert-success" role="status" style={{ marginBottom: 'var(--space-5)' }}>
-            {notice}
-          </div>
-        )}
 
         {actionError && (
           <div className="alert alert-error" role="alert" style={{ marginBottom: 'var(--space-5)' }}>

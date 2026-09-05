@@ -6,6 +6,8 @@ import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
+import SmartImage from '../components/SmartImage.jsx';
+import { photo, photoSrcSet } from '../utils/media.js';
 
 export default function LoginPage() {
   useDocumentTitle('Login');
@@ -185,15 +187,30 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <aside className="auth-aside" aria-hidden="true">
-          <div className="auth-aside-inner">
+        {/*
+          Decorative panel: it repeats what the page already says, so it
+          is hidden from assistive technology rather than read out twice.
+        */}
+        <aside className="auth-aside auth-aside-photo" aria-hidden="true">
+          <SmartImage
+            src={photo('authCampus', 900)}
+            srcSet={photoSrcSet('authCampus', [560, 900, 1200])}
+            sizes="(max-width: 860px) 0px, 480px"
+            alt=""
+            aspect="auto"
+            className="auth-aside-bg"
+          >
+            <div className="image-scrim" />
+          </SmartImage>
+
+          <div className="auth-aside-body">
             <h2>Lost something on campus?</h2>
             <p>
               Every report is tied to a verified college account, so items go
               back to the people who actually own them.
             </p>
-            <ul className="auth-points">
-              <li>Verified members only</li>
+            <ul className="auth-points-light">
+              <li>Verified members of your college only</li>
               <li>Ownership checked before handover</li>
               <li>Contact details stay private until then</li>
             </ul>

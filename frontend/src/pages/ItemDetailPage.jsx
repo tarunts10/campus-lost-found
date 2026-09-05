@@ -12,17 +12,36 @@
  * Hiding a button prevents confusion, not abuse — the server rejects an
  * unauthorised PATCH or DELETE with 403 regardless of what is rendered.
  * Every one of those failures is surfaced here rather than swallowed.
+ *
+ * WHAT IS DELIBERATELY NOT SHOWN: the reporter's email, and any claimant
+ * detail beyond a name. The backend withholds those, and this page does
+ * not attempt to reconstruct them from anywhere else.
+ *
+ * FINAL PASS CHANGES:
+ *   - the gallery is now the first thing on the page, full width, and
+ *     opens a lightbox. Item photos are evidence; they earn the space
+ *   - an item with no photos gets the generated category artwork rather
+ *     than a missing block, so the layout is identical either way
+ *   - window.confirm is gone. Deleting an item and approving a claim
+ *     both go through <ConfirmDialog>: they are irreversible, and
+ *     approving in particular auto-rejects every other pending claim
+ *   - transient confirmations are toasts, so the layout stops jumping
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import * as itemService from '../services/itemService.js';
 import * as claimService from '../services/claimService.js';
 import Badge from '../components/Badge.jsx';
+import SmartImage from '../components/SmartImage.jsx';
+import Lightbox from '../components/Lightbox.jsx';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { SectionLoader } from '../components/Loader.jsx';
 import { EmptyState, ErrorState } from '../components/StateBlock.jsx';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
+import { useReveal } from '../hooks/useReveal.js';
 import ImageUploader from '../components/ImageUploader.jsx';
 import {
   CATEGORY_ICONS,
@@ -30,6 +49,7 @@ import {
   ITEM_CATEGORIES,
   ITEM_TYPES,
 } from '../utils/constants.js';
+import { categoryArtwork } from '../utils/media.js';
 import {
   formatDate,
   formatRelative,
@@ -43,9 +63,11 @@ export default function ItemDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const toast = useToast();
 
   const [item, setItem] = useState(null);
   const [activeImage, setActiveImage] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -56,12 +78,22 @@ export default function ItemDetailPage() {
   const [editForm, setEditForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState('');
-  const [notice, setNotice] = useState('');
 
   const [claimMessage, setClaimMessage] = useState('');
   const [claimSubmitting, setClaimSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deciding, setDeciding] = useState(null);
+
+  /**
+   * Which confirmation is open, if any.
+   *
+   * One piece of state rather than a boolean per dialog: only one can be
+   * open at a time, and a single value makes that impossible to get
+   * wrong. `null` means nothing is open.
+   */
+  const [confirming, setConfirming] = useState(null);
+
+  const detailRef = useReveal();
 
   useDocumentTitle(item?.title);
 
@@ -82,6 +114,8 @@ export default function ItemDetailPage() {
   const canClaim =
     item && user && !isOwner && item.status === 'ACTIVE' && !myClaim;
 
+  const pendingClaims = claims.filter((claim) => claim.status === 'PENDING');
+
   const loadItem = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -89,6 +123,7 @@ export default function ItemDetailPage() {
     try {
       const data = await itemService.getItem(id);
       setItem(data);
+      setActiveImage(0);
       setEditForm({
         title: data.title,
         description: data.description,
@@ -155,7 +190,8 @@ export default function ItemDetailPage() {
       const updated = await itemService.updateItem(id, editForm);
       setItem(updated);
       setEditing(false);
-      setNotice('Item updated.');
+      setActiveImage(0);
+      toast.success('Item updated.');
     } catch (err) {
       // Includes 403 if the backend disagrees that this user may edit.
       setActionError(err.message);
@@ -165,24 +201,17 @@ export default function ItemDetailPage() {
   };
 
   const handleDelete = async () => {
-    const confirmed = window.confirm(
-      `Delete "${item.title}"? This cannot be undone.`
-    );
-
-    if (!confirmed) return;
-
     setDeleting(true);
     setActionError('');
 
     try {
       await itemService.deleteItem(id);
-      navigate('/my-items', {
-        replace: true,
-        state: { notice: 'Item deleted.' },
-      });
+      toast.success('Item deleted.');
+      navigate('/my-items', { replace: true });
     } catch (err) {
       setActionError(err.message);
       setDeleting(false);
+      setConfirming(null);
     }
   };
 
@@ -194,7 +223,9 @@ export default function ItemDetailPage() {
     try {
       await claimService.createClaim(id, claimMessage.trim());
       setClaimMessage('');
-      setNotice('Claim submitted. The person who reported this item will review it.');
+      toast.success(
+        'Claim submitted. The person who reported this item will review it.'
+      );
       await loadClaims();
     } catch (err) {
       setActionError(err.message);
@@ -206,12 +237,13 @@ export default function ItemDetailPage() {
   const handleDecision = async (claimId, status) => {
     setDeciding(claimId);
     setActionError('');
+    setConfirming(null);
 
     try {
       const result = await claimService.decideClaim(claimId, status);
 
       if (status === 'APPROVED') {
-        setNotice(
+        toast.success(
           `Claim approved. This item is now ${result.itemStatus}` +
             (result.otherClaimsRejected > 0
               ? `, and ${result.otherClaimsRejected} other pending claim${
@@ -220,7 +252,7 @@ export default function ItemDetailPage() {
               : '.')
         );
       } else {
-        setNotice('Claim rejected.');
+        toast.success('Claim rejected.');
       }
 
       // Reload both: approving changes the ITEM status too.
@@ -259,6 +291,10 @@ export default function ItemDetailPage() {
 
   if (!item) return null;
 
+  const images = item.images || [];
+  const hasPhotos = images.length > 0;
+  const art = categoryArtwork(item.category);
+
   return (
     <div className="page">
       <div className="container">
@@ -266,21 +302,15 @@ export default function ItemDetailPage() {
           ← Back to browse
         </Link>
 
-        {notice && (
-          <div className="alert alert-success mt-4" role="status">
-            {notice}
-          </div>
-        )}
-
         {actionError && (
           <div className="alert alert-error mt-4" role="alert">
             {actionError}
           </div>
         )}
 
-        <div className="detail-grid mt-6">
+        <div className="detail-grid mt-6" ref={detailRef}>
           {/* -------------------------------------------- MAIN COLUMN */}
-          <article className="form-card">
+          <article className="form-card reveal">
             {editing ? (
               <form onSubmit={handleSave} className="stack">
                 <h2>Edit item</h2>
@@ -378,15 +408,22 @@ export default function ItemDetailPage() {
 
                 <ImageUploader
                   images={editForm.images || []}
-                  onChange={(images) =>
-                    setEditForm((current) => ({ ...current, images }))
+                  onChange={(nextImages) =>
+                    setEditForm((current) => ({ ...current, images: nextImages }))
                   }
                   disabled={saving}
                 />
 
                 <div className="row">
                   <button type="submit" className="btn btn-primary" disabled={saving}>
-                    {saving ? (<><span className="btn-spinner" aria-hidden="true" />Saving…</>) : ('Save changes')}
+                    {saving ? (
+                      <>
+                        <span className="btn-spinner" aria-hidden="true" />
+                        Saving…
+                      </>
+                    ) : (
+                      'Save changes'
+                    )}
                   </button>
                   <button
                     type="button"
@@ -403,51 +440,79 @@ export default function ItemDetailPage() {
               </form>
             ) : (
               <>
-                {/* Photo gallery. Rendered only when the report has images. */}
-                {item.images?.length > 0 && (
-                  <div className="detail-gallery">
-                    <figure className="detail-gallery-main">
-                      <img
-                        src={item.images[activeImage]?.url}
-                        alt={item.images[activeImage]?.name || item.title}
-                      />
-                    </figure>
+                {/* ============================================ GALLERY
+                    Promoted to the top and given real size: an item photo
+                    is the evidence someone uses to recognise their own
+                    property, so it should not be a thumbnail.
 
-                    {item.images.length > 1 && (
-                      <div className="detail-gallery-thumbs">
-                        {item.images.map((image, index) => (
-                          <button
-                            key={image.fileId}
-                            type="button"
-                            className={`detail-thumb${index === activeImage ? ' is-active' : ''}`}
-                            onClick={() => setActiveImage(index)}
-                            aria-label={`Show image ${index + 1} of ${item.images.length}`}
-                            aria-current={index === activeImage}
-                          >
-                            <img src={image.url} alt="" loading="lazy" />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                    An item with NO photos gets the generated category
+                    artwork instead of nothing at all, so the page has the
+                    same shape either way. */}
+                <div className="detail-gallery">
+                  {hasPhotos ? (
+                    <>
+                      <button
+                        type="button"
+                        className="detail-gallery-main"
+                        onClick={() => setLightboxOpen(true)}
+                        aria-label={`Open photo ${activeImage + 1} of ${images.length} full size`}
+                      >
+                        <SmartImage
+                          src={images[activeImage]?.url}
+                          alt={item.title}
+                          aspect="16 / 10"
+                          objectFit="contain"
+                          eager
+                        />
+                        <span className="gallery-zoom-hint" aria-hidden="true">
+                          {'\u{1F50E}'} View full size
+                        </span>
+                      </button>
 
-                <div className="row" style={{ justifyContent: 'space-between' }}>
-                  <div className="row">
-                    <span aria-hidden="true" style={{ fontSize: '1.75rem' }}>
-                      {CATEGORY_ICONS[item.category]}
-                    </span>
-                    <Badge value={item.type} />
-                    <Badge value={item.status} />
-                  </div>
-                  <span className="text-subtle">
+                      {images.length > 1 && (
+                        <div className="detail-gallery-thumbs">
+                          {images.map((image, index) => (
+                            <button
+                              key={image.fileId}
+                              type="button"
+                              className={`detail-thumb${index === activeImage ? ' is-active' : ''}`}
+                              onClick={() => setActiveImage(index)}
+                              aria-label={`Show image ${index + 1} of ${images.length}`}
+                              aria-current={index === activeImage}
+                            >
+                              <img src={image.url} alt="" loading="lazy" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div
+                      className="detail-gallery-main item-card-art"
+                      style={{
+                        '--art-from': art.from,
+                        '--art-to': art.to,
+                        cursor: 'default',
+                      }}
+                      aria-hidden="true"
+                    >
+                      <span className="item-card-art-glyph">{art.glyph}</span>
+                      <span className="item-card-art-label">
+                        No photo on this report
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="detail-hero-meta">
+                  <Badge value={item.type} />
+                  <Badge value={item.status} />
+                  <span className="text-subtle" style={{ marginLeft: 'auto' }}>
                     Reported {formatRelative(item.createdAt)}
                   </span>
                 </div>
 
-                <h1 className="mt-4" style={{ fontSize: 'var(--text-3xl)' }}>
-                  {item.title}
-                </h1>
+                <h1 style={{ fontSize: 'var(--text-3xl)' }}>{item.title}</h1>
 
                 <p className="text-muted mt-4" style={{ whiteSpace: 'pre-wrap' }}>
                   {item.description}
@@ -457,6 +522,7 @@ export default function ItemDetailPage() {
                   <div>
                     <p className="fact-label">Category</p>
                     <p className="fact-value">
+                      {CATEGORY_ICONS[item.category]}{' '}
                       {CATEGORY_LABELS[item.category] || item.category}
                     </p>
                   </div>
@@ -508,10 +574,17 @@ export default function ItemDetailPage() {
                       <button
                         type="button"
                         className="btn btn-danger btn-sm"
-                        onClick={handleDelete}
+                        onClick={() => setConfirming({ kind: 'delete' })}
                         disabled={deleting}
                       >
-                        {deleting ? (<><span className="btn-spinner" aria-hidden="true" />Deleting…</>) : ('Delete')}
+                        {deleting ? (
+                          <>
+                            <span className="btn-spinner" aria-hidden="true" />
+                            Deleting…
+                          </>
+                        ) : (
+                          'Delete'
+                        )}
                       </button>
                     </div>
                   )}
@@ -527,15 +600,15 @@ export default function ItemDetailPage() {
           </article>
 
           {/* -------------------------------------------- SIDE COLUMN */}
-          <aside className="stack-lg">
+          <aside className="stack-lg detail-side">
             {/* Claim form — only for other people, on ACTIVE items. */}
             {canClaim && (
-              <section className="form-card">
+              <section className="form-card reveal" style={{ '--reveal-delay': '90ms' }}>
                 <h2 style={{ fontSize: 'var(--text-xl)' }}>Is this yours?</h2>
                 <p className="text-muted mt-4" style={{ fontSize: 'var(--text-sm)' }}>
                   Describe something only the owner would know — a mark, a
                   contents detail, where you lost it. The person who reported
-                  it decides.
+                  it decides, so specifics matter far more than urgency.
                 </p>
 
                 <form onSubmit={handleClaimSubmit} className="stack mt-4">
@@ -562,7 +635,14 @@ export default function ItemDetailPage() {
                     className="btn btn-primary btn-block"
                     disabled={claimSubmitting || claimMessage.trim().length < 20}
                   >
-                    {claimSubmitting ? (<><span className="btn-spinner" aria-hidden="true" />Submitting…</>) : ('Submit claim')}
+                    {claimSubmitting ? (
+                      <>
+                        <span className="btn-spinner" aria-hidden="true" />
+                        Submitting…
+                      </>
+                    ) : (
+                      'Submit claim'
+                    )}
                   </button>
                 </form>
               </section>
@@ -570,7 +650,7 @@ export default function ItemDetailPage() {
 
             {/* The current user's own claim status. */}
             {myClaim && (
-              <section className="form-card">
+              <section className="form-card reveal" style={{ '--reveal-delay': '90ms' }}>
                 <div className="row" style={{ justifyContent: 'space-between' }}>
                   <h2 style={{ fontSize: 'var(--text-xl)' }}>Your claim</h2>
                   <Badge value={myClaim.status} />
@@ -584,11 +664,17 @@ export default function ItemDetailPage() {
                     Waiting for the reporter to review your claim.
                   </p>
                 )}
+                {myClaim.status === 'APPROVED' && (
+                  <p className="alert alert-success mt-4">
+                    Approved. Arrange collection with the person who reported
+                    it.
+                  </p>
+                )}
               </section>
             )}
 
             {!canClaim && !myClaim && !isOwner && item.status !== 'ACTIVE' && (
-              <section className="form-card">
+              <section className="form-card reveal">
                 <EmptyState
                   icon={'\u{1F512}'}
                   title="Claims are closed"
@@ -599,13 +685,21 @@ export default function ItemDetailPage() {
 
             {/* Claim management — owners and admins. */}
             {canManage && (
-              <section className="form-card">
+              <section className="form-card reveal" style={{ '--reveal-delay': '140ms' }}>
                 <h2 style={{ fontSize: 'var(--text-xl)' }}>
                   Claims on this item
                   {claims.length > 0 && (
                     <span className="text-subtle"> ({claims.length})</span>
                   )}
                 </h2>
+
+                {pendingClaims.length > 0 && item.status === 'ACTIVE' && (
+                  <p className="alert alert-info mt-4">
+                    {pendingClaims.length} claim
+                    {pendingClaims.length === 1 ? '' : 's'} waiting for your
+                    decision.
+                  </p>
+                )}
 
                 {claimsLoading ? (
                   <SectionLoader label="Loading claims" />
@@ -639,15 +733,34 @@ export default function ItemDetailPage() {
                             <button
                               type="button"
                               className="btn btn-primary btn-sm"
-                              onClick={() => handleDecision(claim._id, 'APPROVED')}
+                              onClick={() =>
+                                setConfirming({
+                                  kind: 'approve',
+                                  claimId: claim._id,
+                                  name: claim.claimant?.name || 'this person',
+                                })
+                              }
                               disabled={deciding === claim._id}
                             >
-                              {deciding === claim._id ? (<><span className="btn-spinner" aria-hidden="true" />Working…</>) : ('Approve')}
+                              {deciding === claim._id ? (
+                                <>
+                                  <span className="btn-spinner" aria-hidden="true" />
+                                  Working…
+                                </>
+                              ) : (
+                                'Approve'
+                              )}
                             </button>
                             <button
                               type="button"
                               className="btn btn-danger btn-sm"
-                              onClick={() => handleDecision(claim._id, 'REJECTED')}
+                              onClick={() =>
+                                setConfirming({
+                                  kind: 'reject',
+                                  claimId: claim._id,
+                                  name: claim.claimant?.name || 'this person',
+                                })
+                              }
                               disabled={deciding === claim._id}
                             >
                               Reject
@@ -663,6 +776,64 @@ export default function ItemDetailPage() {
           </aside>
         </div>
       </div>
+
+      {/* ================================================== LIGHTBOX */}
+      {lightboxOpen && hasPhotos && (
+        <Lightbox
+          images={images}
+          index={activeImage}
+          title={item.title}
+          onNavigate={setActiveImage}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+
+      {/* ============================================== CONFIRMATIONS */}
+      <ConfirmDialog
+        open={confirming?.kind === 'delete'}
+        destructive
+        busy={deleting}
+        title="Delete this report?"
+        message={`"${item.title}" will be removed permanently, along with any photos attached to it. Claims filed against it are removed too. This cannot be undone.`}
+        confirmLabel="Delete report"
+        cancelLabel="Keep it"
+        onConfirm={handleDelete}
+        onCancel={() => setConfirming(null)}
+      />
+
+      {/*
+        Approving is confirmed as well as deleting, and for a real
+        reason: approval marks the item CLAIMED and auto-rejects every
+        other pending claim. That is irreversible through the UI, so the
+        consequence is spelled out before it happens rather than
+        discovered afterwards.
+      */}
+      <ConfirmDialog
+        open={confirming?.kind === 'approve'}
+        busy={deciding === confirming?.claimId}
+        title="Approve this claim?"
+        message={
+          `This marks the item as claimed by ${confirming?.name}` +
+          (pendingClaims.length > 1
+            ? `, and automatically rejects the other ${pendingClaims.length - 1} pending claim${pendingClaims.length - 1 === 1 ? '' : 's'}.`
+            : '.') +
+          ' You cannot undo this from here.'
+        }
+        confirmLabel="Approve claim"
+        onConfirm={() => handleDecision(confirming.claimId, 'APPROVED')}
+        onCancel={() => setConfirming(null)}
+      />
+
+      <ConfirmDialog
+        open={confirming?.kind === 'reject'}
+        destructive
+        busy={deciding === confirming?.claimId}
+        title="Reject this claim?"
+        message={`${confirming?.name} will be told their claim was rejected. The item stays active, so other people can still claim it.`}
+        confirmLabel="Reject claim"
+        onConfirm={() => handleDecision(confirming.claimId, 'REJECTED')}
+        onCancel={() => setConfirming(null)}
+      />
     </div>
   );
 }

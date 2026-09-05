@@ -373,3 +373,129 @@
     scroll-behavior: auto !important;
   }
 }
+
+/**
+ * ==================================================================
+ * FINAL PASS — additional tokens
+ *
+ * Everything below follows the same two-layer rule as above: dark
+ * values are declared once in the --d-* block or derived from tokens
+ * that already flip. No component reads a literal colour.
+ * ==================================================================
+ */
+
+:root {
+  /* --- Glass / elevated overlay surfaces ---------------------------
+     Used by the toast stack, the dialog panel and the floating search
+     band. A translucent surface over a blur reads as "above the page"
+     far more convincingly than another opaque box with a shadow. */
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(15, 23, 42, 0.08);
+  --glass-blur: 16px;
+
+  /* --- Scrim over photography -------------------------------------
+     Photographs have unpredictable local contrast, so text placed on
+     one needs a scrim underneath it or it becomes unreadable against a
+     bright patch.
+
+     THE OPACITY IS NOT A TASTE DECISION. Compositing a scrim of
+     rgb(6,11,25) at alpha `a` over a blown-out white region gives
+     white text a contrast ratio of:
+
+         a = 0.15  ->  1.40:1   (unreadable)
+         a = 0.45  ->  3.15:1   (fails AA for body text)
+         a = 0.56  ->  4.50:1   (the AA minimum, exactly)
+         a = 0.72  ->  8.17:1   (what these use)
+
+     So anywhere white text actually sits, the scrim must reach at
+     least 0.56, and these are set to 0.72+ for margin. An earlier
+     version topped out at 0.55 halfway down and put the auth panel's
+     body copy at roughly 2:1 over a sunlit photograph — legible on the
+     designer's screen, invisible in daylight. */
+
+  /* Bottom-anchored text: a hero caption, the auth panel. */
+  --scrim-strong: linear-gradient(
+    180deg,
+    rgba(6, 11, 25, 0.25) 0%,
+    rgba(6, 11, 25, 0.58) 34%,
+    rgba(6, 11, 25, 0.8) 60%,
+    rgba(6, 11, 25, 0.93) 100%
+  );
+
+  /* Text centred or spread across the whole panel, where a gradient
+     would leave part of it under-darkened. Flat, and deliberately so. */
+  --scrim-panel: linear-gradient(
+    180deg,
+    rgba(6, 11, 25, 0.78) 0%,
+    rgba(6, 11, 25, 0.74) 100%
+  );
+
+  /* No text over this one — it only separates a photo from the page. */
+  --scrim-soft: linear-gradient(
+    180deg,
+    rgba(6, 11, 25, 0) 0%,
+    rgba(6, 11, 25, 0.42) 100%
+  );
+
+  /* Fills the media box before a photograph decodes, and stays there
+     permanently if the image host is unreachable. */
+  --image-placeholder: linear-gradient(
+    135deg,
+    var(--bg-muted) 0%,
+    var(--bg-subtle) 50%,
+    var(--bg-muted) 100%
+  );
+
+  /* --- 3D scene ----------------------------------------------------
+     Perspective is on the STAGE, not the layers. A shorter distance
+     exaggerates the projection; 1100px is deep enough that the scene
+     reads as dimensional without the distortion looking like a
+     fisheye lens. */
+  --scene-perspective: 1100px;
+  --scene-rx: 0deg;
+  --scene-ry: 0deg;
+
+  /* --- Display typography ------------------------------------------
+     A tighter tracking ramp for large headings. Inter at display
+     sizes needs negative tracking or it looks loose and generic; the
+     larger the size, the tighter it wants to be. */
+  --tracking-display: -0.035em;
+  --tracking-tight: -0.02em;
+
+  --text-6xl: 3.75rem;
+
+  /* --- Ring used for focus and selection --------------------------- */
+  --ring: 0 0 0 3px var(--brand-focus);
+
+  --z-toast: 400;
+  --z-dialog: 500;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --glass: rgba(21, 29, 46, 0.78);
+    --glass-border: rgba(255, 255, 255, 0.08);
+
+    /* Dark surfaces already sit close to the scrim colour, so the
+       gradient is lightened slightly to stay visible as a separation
+       layer rather than merging into the page. */
+    --image-placeholder: linear-gradient(
+      135deg,
+      var(--d-bg-muted) 0%,
+      var(--d-surface-raised) 50%,
+      var(--d-bg-muted) 100%
+    );
+  }
+}
+
+:root[data-theme='dark'] {
+  --glass: rgba(21, 29, 46, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  --image-placeholder: linear-gradient(
+    135deg,
+    var(--d-bg-muted) 0%,
+    var(--d-surface-raised) 50%,
+    var(--d-bg-muted) 100%
+  );
+}

@@ -12,6 +12,8 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 import * as institutionService from '../services/institutionService.js';
+import SmartImage from '../components/SmartImage.jsx';
+import { photo, photoSrcSet } from '../utils/media.js';
 
 const validate = (form, institutions) => {
   const errors = {};
@@ -234,6 +236,31 @@ export default function RegisterPage() {
               )}
             </div>
 
+            {/*
+              INSTITUTION ISOLATION, explained at the moment it matters.
+
+              This is the one screen where the user makes the choice that
+              decides what data their account can ever see, so it is the
+              only place the explanation is genuinely useful. Saying it in
+              a help page nobody opens would not count.
+
+              Note the wording: the boundary is described as a server
+              rule, because that is what it is. The dropdown is a request;
+              the backend verifies the institution exists, is accepting
+              registrations, and that the email domain matches — and it is
+              the backend that filters every later query.
+            */}
+            <div className="institution-note">
+              <span aria-hidden="true">{'\u{1F3EB}'}</span>
+              <span>
+                <strong>Your college is your boundary.</strong> Everything you
+                report is visible only to verified members of the institution
+                you pick here, and you will only ever see items reported
+                inside it. This is enforced by the server on every request,
+                and it cannot be changed after your account is created.
+              </span>
+            </div>
+
             <div className="field">
               <label htmlFor="name">Full name</label>
               <input
@@ -342,17 +369,33 @@ export default function RegisterPage() {
           </p>
         </div>
 
-        <aside className="auth-aside" aria-hidden="true">
-          <div className="auth-aside-inner">
+        {/*
+          Decorative panel: everything it says is stated in the form
+          beside it, so it is hidden from assistive technology rather
+          than read out twice.
+        */}
+        <aside className="auth-aside auth-aside-photo" aria-hidden="true">
+          <SmartImage
+            src={photo('authStudy', 900)}
+            srcSet={photoSrcSet('authStudy', [560, 900, 1200])}
+            sizes="(max-width: 860px) 0px, 480px"
+            alt=""
+            aspect="auto"
+            className="auth-aside-bg"
+          >
+            <div className="image-scrim" />
+          </SmartImage>
+
+          <div className="auth-aside-body">
             <h2>Found something?</h2>
             <p>
               Report it in under a minute. The owner searches, recognises it,
               and proves it is theirs before you hand anything over.
             </p>
-            <ul className="auth-points">
+            <ul className="auth-points-light">
               <li>Report lost or found items</li>
-              <li>Search by category and location</li>
-              <li>Approve the claim you believe</li>
+              <li>Search by category, location and date</li>
+              <li>Approve the claim you actually believe</li>
             </ul>
           </div>
         </aside>

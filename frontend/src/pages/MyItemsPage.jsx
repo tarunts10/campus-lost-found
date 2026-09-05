@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import * as itemService from '../services/itemService.js';
 import ItemCard from '../components/ItemCard.jsx';
 import Pagination from '../components/Pagination.jsx';
@@ -24,14 +24,11 @@ import { PAGE_SIZE } from '../utils/constants.js';
 export default function MyItemsPage() {
   useDocumentTitle('My items');
 
-  const location = useLocation();
-
   const [items, setItems] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState(location.state?.notice || '');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,13 +55,6 @@ export default function MyItemsPage() {
     load();
   }, [load]);
 
-  // Clear the "Item deleted." banner after a few seconds.
-  useEffect(() => {
-    if (!notice) return;
-    const timer = setTimeout(() => setNotice(''), 5000);
-    return () => clearTimeout(timer);
-  }, [notice]);
-
   const stats = {
     total: pagination?.total ?? 0,
     lost: items.filter((item) => item.type === 'LOST').length,
@@ -86,12 +76,6 @@ export default function MyItemsPage() {
             </Link>
           </div>
         </header>
-
-        {notice && (
-          <div className="alert alert-success" role="status" style={{ marginBottom: 'var(--space-5)' }}>
-            {notice}
-          </div>
-        )}
 
         {!loading && !error && items.length > 0 && (
           <div className="stat-row">

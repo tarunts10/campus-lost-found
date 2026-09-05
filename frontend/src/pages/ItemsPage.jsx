@@ -8,6 +8,11 @@
  * That costs a little plumbing and buys a lot: a filtered view is
  * shareable, survives a refresh, and the browser back button steps
  * through filter changes the way people expect.
+ *
+ * ACTIVE FILTER CHIPS: each applied filter is shown as a removable pill.
+ * Before this, "Filters applied — Clear all" told the user THAT something
+ * was filtered but not WHAT, so the only way to widen a search by one
+ * step was to clear everything and start again.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -18,6 +23,7 @@ import Pagination from '../components/Pagination.jsx';
 import { CardSkeleton } from '../components/Loader.jsx';
 import { EmptyState, ErrorState } from '../components/StateBlock.jsx';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import {
   CATEGORY_LABELS,
   ITEM_CATEGORIES,
@@ -30,6 +36,7 @@ import { titleCase } from '../utils/format.js';
 export default function ItemsPage() {
   useDocumentTitle('Browse items');
 
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const type = searchParams.get('type') || '';
@@ -111,7 +118,20 @@ export default function ItemsPage() {
 
   const clearAll = () => setSearchParams(new URLSearchParams());
 
-  const hasFilters = Boolean(type || category || status || search);
+  /**
+   * The applied filters, as removable chips.
+   *
+   * Built from the same URL params the query uses, so the chips cannot
+   * drift out of sync with what was actually requested.
+   */
+  const activeFilters = [
+    search && { key: 'search', label: `“${search}”` },
+    type && { key: 'type', label: titleCase(type) },
+    category && { key: 'category', label: CATEGORY_LABELS[category] || category },
+    status && { key: 'status', label: titleCase(status) },
+  ].filter(Boolean);
+
+  const hasFilters = activeFilters.length > 0;
 
   return (
     <div className="page">
@@ -119,8 +139,9 @@ export default function ItemsPage() {
         <header className="page-header">
           <h1>Browse items</h1>
           <p>
-            Everything reported across campus. Filter by type, category or
-            status, or search by keyword.
+            Everything reported at
+            {user?.institution?.name ? ` ${user.institution.name}` : ' your college'}.
+            Filter by type, category or status, or search by keyword.
           </p>
         </header>
 
@@ -195,34 +216,57 @@ export default function ItemsPage() {
           </button>
         </form>
 
+        {/* ------------------------------------------- ACTIVE FILTERS */}
         {hasFilters && (
-          <div className="row" style={{ marginBottom: 'var(--space-5)' }}>
-            <span className="text-subtle">Filters applied</span>
+          <div className="filter-chips">
+            <span className="text-subtle">Filtered by</span>
+
+            {activeFilters.map((filter) => (
+              <span key={filter.key} className="filter-chip">
+                {filter.label}
+                <button
+                  type="button"
+                  className="filter-chip-remove"
+                  onClick={() => updateFilter(filter.key, '')}
+                  aria-label={`Remove ${filter.key} filter ${filter.label}`}
+                >
+                  {'✕'}
+                </button>
+              </span>
+            ))}
+
             <button type="button" className="btn btn-ghost btn-sm" onClick={clearAll}>
               Clear all
             </button>
           </div>
         )}
 
-        {/* Announced to screen readers when the count changes. */}
         {/*
           Always rendered, even while loading, so the results grid keeps a
           fixed starting position and does not jump up the page when the
-          count arrives.
+          count arrives. Announced to screen readers when it changes.
         */}
-        <p
-          className="results-count"
-          aria-live="polite"
-          {...(loading ? { 'aria-busy': 'true' } : {})}
-        >
-          {loading
-            ? 'Searching…'
-            : error
-              ? ' '
-              : pagination
-                ? `${pagination.total} item${pagination.total === 1 ? '' : 's'} found`
-                : ' '}
-        </p>
+        <div className="results-bar">
+          <p
+            className="results-count"
+            aria-live="polite"
+            {...(loading ? { 'aria-busy': 'true' } : {})}
+          >
+            {loading
+              ? 'Searching…'
+              : error
+                ? ' '
+                : pagination
+                  ? `${pagination.total} item${pagination.total === 1 ? '' : 's'} found`
+                  : ' '}
+          </p>
+
+          {!loading && !error && pagination?.pages > 1 && (
+            <p className="text-subtle">
+              Page {pagination.page} of {pagination.pages}
+            </p>
+          )}
+        </div>
 
         {/* -------------------------------------------- THE FOUR STATES */}
         {loading ? (
@@ -234,29 +278,34 @@ export default function ItemsPage() {
             onRetry={load}
           />
         ) : items.length === 0 ? (
-          <EmptyState
-            title={
-              hasFilters
-                ? 'No lost or found items match your search'
-                : 'Nothing reported yet at your institution'
-            }
-            message={
-              hasFilters
-                ? 'Try a different keyword, or clear a filter to widen the search.'
-                : 'Items reported by members of your institution will appear here.'
-            }
-            action={
-              hasFilters ? (
+          hasFilters ? (
+            /* A filtered miss is routine. A quiet panel is right — it
+               should not be dressed up as an event. */
+            <EmptyState
+              icon={'\u{1F50D}'}
+              title="No items match your search"
+              message="Try a different keyword, or remove one of the filters above to widen the search."
+              action={
                 <button type="button" className="btn btn-secondary" onClick={clearAll}>
                   Clear filters
                 </button>
-              ) : (
+              }
+            />
+          ) : (
+            /* An empty institution is a first impression, so it gets the
+               full photographic treatment. */
+            <EmptyState
+              photoName="emptyCampus"
+              icon={'\u{1F4E6}'}
+              title="Nothing reported yet"
+              message="No one at your college has filed a report yet. Be the first — it takes under a minute, and it is how someone gets their things back."
+              action={
                 <Link to="/report" className="btn btn-primary">
                   Report an item
                 </Link>
-              )
-            }
-          />
+              }
+            />
+          )
         ) : (
           <>
             <div className="grid-cards">

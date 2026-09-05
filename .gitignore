@@ -42,7 +42,7 @@ yarn-error.log*
 
 
 # --- Uploaded / temporary files -------------------------------------
-# Item photos are handled by Multer before going to Cloudinary.
+# Item photos are handled by Multer before going to ImageKit.
 # Anything landing on local disk is scratch data, not source code.
 uploads/
 tmp/
